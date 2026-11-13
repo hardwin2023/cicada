@@ -12,7 +12,7 @@ enum SpeakerEnrollmentError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noAudio: L("这场会议没有可用的录音，先打开保存会议录音再试")
-        case .notEnoughSpeech: L("这个人的发言太少，至少要有 3 句、4 秒左右的声音")
+        case .notEnoughSpeech: L("这个人的发言太少，至少要有 3 句、6 秒左右的声音")
         case .modelUnavailable: L("声纹模型加载失败，稍后再试")
         }
     }
@@ -26,7 +26,7 @@ struct SpeakerEnrollmentResult {
 
 enum SpeakerEnrollment {
     static let minimumClips = 3
-    static let minimumSeconds = 4.0
+    static let minimumSeconds = 6.0
     private static let maximumClipSeconds = 12.0
 
     /// `audioURL`: the meeting's system recording, or an imported file's source.
