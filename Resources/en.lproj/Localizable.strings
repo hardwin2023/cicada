@@ -1515,3 +1515,7 @@
 "已认出 %@" = "Recognized %@";
 "这次不再按声纹认人" = "Stop recognizing by voice for this meeting";
 "知道了" = "OK";
+
+/* Microphone on start */
+"开始听时打开麦克风" = "Open the microphone when listening starts";
+"关掉后只听电脑声音；开会时再手动打开" = "Off: only the Mac's audio; open it by hand when a meeting starts";

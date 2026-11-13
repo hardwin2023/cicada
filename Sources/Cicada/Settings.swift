@@ -252,6 +252,11 @@ final class AppSettings: ObservableObject {
     @Published var listenSource: String {
         didSet { save() }
     }
+    /// 开始听时打开麦克风: a user-started meeting hears the room as well as the Mac. Off for
+    /// online-only meetings; launch still never opens the microphone by itself.
+    @Published var autoMicOnStart: Bool {
+        didSet { save() }
+    }
     /// The microphone chosen beside 打开麦克风, by UID; empty is 自动. Never the system default's.
     @Published var roomMicUID: String {
         didSet { save() }
@@ -318,6 +323,7 @@ final class AppSettings: ObservableObject {
         silenceEnd = defaults.string(forKey: "silenceEnd") ?? "prompt"
         silenceMinutes = defaults.object(forKey: "silenceMinutes") as? Double ?? 10
         listenSource = ["room", "both"].contains(defaults.string(forKey: "listenSource")) ? defaults.string(forKey: "listenSource")! : "system"
+        autoMicOnStart = defaults.object(forKey: "autoMicOnStart") as? Bool ?? true
         roomMicUID = defaults.string(forKey: "roomMicUID") ?? ""
         diagnostics = defaults.object(forKey: "diagnostics") as? Bool ?? DevBuild.isDev
         notesCapturable = defaults.bool(forKey: "notesCapturable")
@@ -381,6 +387,7 @@ final class AppSettings: ObservableObject {
         defaults.set(silenceEnd, forKey: "silenceEnd")
         defaults.set(silenceMinutes, forKey: "silenceMinutes")
         defaults.set(listenSource, forKey: "listenSource")
+        defaults.set(autoMicOnStart, forKey: "autoMicOnStart")
         defaults.set(roomMicUID, forKey: "roomMicUID")
         defaults.set(diagnostics, forKey: "diagnostics")
         defaults.set(notesCapturable, forKey: "notesCapturable")

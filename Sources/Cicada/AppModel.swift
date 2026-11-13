@@ -729,6 +729,12 @@ final class AppModel: ObservableObject {
     /// listening began. Starting by itself (launch, a meeting app's call) waits for the first words.
     func start(byUser: Bool = false) {
         guard !listen.isRunning else { return }
+        // Starting by hand means the meeting is here now: open the room microphone too, unless
+        // this Mac is only ever used for online meetings (设置 › 通用). Launch still stays silent.
+        if byUser, settings.autoMicOnStart, settings.listenSource == "system" {
+            settings.listenSource = Recognition.legacy ? "room" : "both"
+            debugLog("mic auto-on: user started listening")
+        }
         let session = store.begin()
         diagnostics.begin()
         speakers.reset()
