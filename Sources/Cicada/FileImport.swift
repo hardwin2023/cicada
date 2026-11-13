@@ -84,11 +84,19 @@ final class FileImporter: ObservableObject {
     }
 
     /// Transcribe a record again from the start (one that stopped halfway, or by request), in
-    /// `lang` when the user picked it.
+    /// `lang` when the user picked it. A live meeting has no `sourcePath`; its saved system.m4a
+    /// (or mic/room file) is used instead, so a record with a bad transcript can be redone.
     func retry(_ id: String, lang: Lang? = nil) {
-        guard let path = store.session(id)?.sourcePath, current?.id != id, !queue.contains(where: { $0.id == id }) else { return }
+        guard let s = store.session(id), current?.id != id, !queue.contains(where: { $0.id == id }) else { return }
+        let candidates = [s.sourcePath.map { URL(fileURLWithPath: $0) },
+                          store.systemAudioURL(id), store.micAudioURL(id), store.roomAudioURL(id)].compactMap { $0 }
+        guard let url = candidates.first(where: { FileManager.default.isReadableFile(atPath: $0.path) }) else {
+            debugLog("retry: \(id) has no readable recording")
+            return
+        }
+        if !s.lines.isEmpty || s.notes != nil { store.backupTranscript(id) }
         store.restartImport(id)
-        queue.append(Job(id: id, url: URL(fileURLWithPath: path), lang: lang))
+        queue.append(Job(id: id, url: url, lang: lang))
         next()
     }
 

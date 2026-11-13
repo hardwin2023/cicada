@@ -1020,8 +1020,12 @@ struct MainWindowView: View {
                 Button("显示原文件") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
             }
             Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([store.folder(s.id)]) }
-            if s.sourcePath != nil, !working(s) {
-                Button("重新转写") { importer.retry(s.id) }
+            if s.hasAudio, !live, !working(s) {
+                Menu("重新转写") {
+                    ForEach(sourceLanguages, id: \.locale) { lang in
+                        Button(lang.name) { importer.retry(s.id, lang: lang) }
+                    }
+                }
             }
             if s.renamed ?? !s.title.hasPrefix("会议 "), s.notes?.title != nil {
                 Button("恢复自动标题") { store.rename(s.id, to: "") }
@@ -1204,6 +1208,17 @@ struct MainWindowView: View {
             .buttonStyle(.plain)
             .disabled((s.lines.isEmpty && (s.notes?.isEmpty ?? true)) || store.liveID == s.id || importer.status(of: s) != nil)
             .sheet(item: $sharing) { shared in ShareSheet(session: shared) { sharing = nil } }
+            if s.hasAudio, store.liveID != s.id, importer.status(of: s) == nil {
+                Menu {
+                    ForEach(sourceLanguages, id: \.locale) { lang in
+                        Button(lang.name) { importer.retry(s.id, lang: lang) }
+                    }
+                } label: {
+                    Text("重新转写").font(.system(size: 13)).foregroundStyle(Palette.secondary)
+                }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                .help(L("用保存的录音重新识别，替换现在的文字记录和纪要；旧记录会先备份"))
+            }
             Menu {
                 Button("复制为 Markdown") { model.export(s, kind: "copy") }
                 Divider()

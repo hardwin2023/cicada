@@ -1519,3 +1519,6 @@
 /* Microphone on start */
 "开始听时打开麦克风" = "Open the microphone when listening starts";
 "关掉后只听电脑声音；开会时再手动打开" = "Off: only the Mac's audio; open it by hand when a meeting starts";
+
+/* Retranscribe help */
+"用保存的录音重新识别，替换现在的文字记录和纪要；旧记录会先备份" = "Recognize the saved recording again and replace the transcript and notes; the old record is backed up first";

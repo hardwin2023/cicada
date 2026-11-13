@@ -405,6 +405,27 @@ final class SessionStore: ObservableObject {
         saveNow(id)
     }
 
+    /// Keep the old transcript and notes beside the recording, before a re-transcribe replaces
+    /// them. Returns the backup's URL, or nil when there is nothing to keep.
+    @discardableResult
+    func backupTranscript(_ id: String) -> URL? {
+        guard let i = index(id), !sessions[i].lines.isEmpty || sessions[i].notes != nil else { return nil }
+        saveNow(id)
+        let dir = folder(id)
+        let src = dir.appendingPathComponent("session.json")
+        guard FileManager.default.fileExists(atPath: src.path) else { return nil }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let dst = dir.appendingPathComponent("session.before-retranscribe-\(stamp).json")
+        do {
+            try FileManager.default.copyItem(at: src, to: dst)
+            return dst
+        } catch {
+            debugLog("backup transcript failed: \(error)")
+            return nil
+        }
+    }
+
     func append(_ line: TranscriptLine, to id: String) {
         guard let i = index(id) else { return }
         sessions[i].lines.append(line)

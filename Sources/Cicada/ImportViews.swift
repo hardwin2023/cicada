@@ -152,7 +152,11 @@ struct ImportStatusStrip: View {
         }
     }
 
-    private var fileExists: Bool { session.sourcePath.map { FileManager.default.fileExists(atPath: $0) } ?? false }
+    private var fileExists: Bool {
+        if let path = session.sourcePath, FileManager.default.fileExists(atPath: path) { return true }
+        return [model.store.systemAudioURL(session.id), model.store.micAudioURL(session.id),
+                model.store.roomAudioURL(session.id)].contains { FileManager.default.fileExists(atPath: $0.path) }
+    }
 
     private func title(_ status: FileImporter.Status) -> String {
         switch status {
