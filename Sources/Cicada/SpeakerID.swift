@@ -274,7 +274,12 @@ enum SpeakerLabels {
     /// way to name it and remember its voiceprint for the next meeting.
     static func singleVoice(_ lines: [TranscriptLine]) -> Int? {
         let voices = Set(lines.filter { $0.speaker == "them" }.compactMap(\.voice))
-        return voices.count == 1 ? voices.first : nil
+        if voices.count == 1 { return voices.first }
+        // A stray breath or a click can make a second one-line voice: still show the one voice
+        // that actually has substantive speech, so a one-to-one call remains nameable.
+        let substantiveVoices = Set(lines.filter { $0.speaker == "them" && substantive($0.src) }
+            .compactMap(\.voice))
+        return substantiveVoices.count == 1 ? substantiveVoices.first : nil
     }
 
     /// Line id → 1-based speaker number; lines without one show as 对方.
