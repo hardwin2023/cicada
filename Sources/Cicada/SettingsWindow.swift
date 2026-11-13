@@ -739,6 +739,11 @@ struct SettingsView: View {
                     Toggle("说话人识别", isOn: $settings.speakerVoices)
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
                 }
+                SettingsRow(title: L("每句都显示说话人"), detail: L("连续同一个人说话时也重复标出，不再只在换人时标")) {
+                    Toggle("每句都显示说话人", isOn: $settings.speakerEveryLine)
+                        .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
+                        .disabled(!settings.speakerVoices)
+                }
                 SettingsRow(title: L("记住说话人"), detail: L("按本机声纹认出以前见过的人；不会上传声音")) {
                     Toggle("记住说话人", isOn: $settings.speakerMemory)
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)

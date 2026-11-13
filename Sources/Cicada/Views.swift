@@ -1338,7 +1338,7 @@ struct MainWindowView: View {
                     let starts = SpeakerLabels.runStarts(s.lines, speakers)
                     ForEach(s.lines) { l in
                         quoteRow(l, speaker: speakers[l.id], picked: quoteJump.map { t in l.id == pickedLine(s, t)?.id } ?? false,
-                                 label: starts.contains(l.id), voices: !speakers.isEmpty).id(l.id)
+                                 label: settings.speakerEveryLine || starts.contains(l.id), voices: !speakers.isEmpty).id(l.id)
                     }
                 }
                 .environment(\.speakerNames, SpeakerLabels.names(s))
@@ -1412,7 +1412,7 @@ struct MainWindowView: View {
                             .padding(.bottom, 10)
                     }
                     ForEach(s.lines) { l in
-                        lineRow(l, speaker: speakers[l.id], label: speakers.isEmpty || starts.contains(l.id), voices: !speakers.isEmpty, place: both, in: s,
+                        lineRow(l, speaker: speakers[l.id], label: speakers.isEmpty || settings.speakerEveryLine || starts.contains(l.id), voices: !speakers.isEmpty, place: both, in: s,
                                 current: l.id == playingLine)
                             .contextMenu {
                                 Button(L("改这句…")) { editingStart = l.shown; editingLine = l.id }

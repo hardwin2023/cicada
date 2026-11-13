@@ -229,6 +229,12 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
+    /// Repeat the speaker tag on every line instead of only when the speaker changes. Off by
+    /// default: a quiet meeting reads better as runs, but a record used as evidence wants it.
+    @Published var speakerEveryLine: Bool {
+        didSet { save() }
+    }
+
     /// Recognise people saved in the local voiceprint library. Enrolling a voice is always an
     /// explicit action with its own consent alert; this switch only controls automatic naming.
     @Published var speakerMemory: Bool {
@@ -339,6 +345,7 @@ final class AppSettings: ObservableObject {
             defaults.set(true, forKey: "speakerVoicesRegular")
         }
         speakerMemory = defaults.object(forKey: "speakerMemory") as? Bool ?? true
+        speakerEveryLine = defaults.object(forKey: "speakerEveryLine") as? Bool ?? false
     }
 
     private func save() {
@@ -392,6 +399,7 @@ final class AppSettings: ObservableObject {
         defaults.set(diagnostics, forKey: "diagnostics")
         defaults.set(notesCapturable, forKey: "notesCapturable")
         defaults.set(speakerVoices, forKey: "speakerVoices")
+        defaults.set(speakerEveryLine, forKey: "speakerEveryLine")
         defaults.set(speakerMemory, forKey: "speakerMemory")
         defaults.set(fixMisheard, forKey: "fixMisheard")
         defaults.set(askNames, forKey: "askNames")
