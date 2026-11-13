@@ -79,7 +79,12 @@ struct SpeakerStrip: View {
     @State private var popover: Int?
 
     var body: some View {
-        let numbers = SpeakerLabels.voiceNumbers(session)
+        let numbered = SpeakerLabels.voiceNumbers(session)
+        // A one-to-one call has one voice, which `voiceNumbers` hides; show it anyway so it can be
+        // named and remembered for the next meeting.
+        let numbers = numbered.isEmpty
+            ? SpeakerLabels.singleVoice(session.lines).map { [$0: 1] } ?? [:]
+            : numbered
         let names = SpeakerLabels.names(session)
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
@@ -143,7 +148,9 @@ struct SpeakerEditor: View {
 
     var body: some View {
         // Gone once merged into someone else: the editor closes on the next turn.
-        if let s = session, let n = SpeakerLabels.voiceNumbers(s)[voice] {
+        if let s = session,
+           let n = SpeakerLabels.voiceNumbers(s)[voice]
+            ?? (SpeakerLabels.singleVoice(s.lines) == voice ? 1 : nil) {
             let numbers = SpeakerLabels.voiceNumbers(s)
             let names = SpeakerLabels.names(s)
             let guess = SpeakerLabels.guessed(s)[n]

@@ -1336,6 +1336,13 @@ final class AppModel: ObservableObject {
             w.config = endConfig
             let said = store.liveID.flatMap { store.session($0) }.map { !$0.lines.isEmpty } ?? false
             let calls = w.config.followApps ? (fakeCalls ?? MicUsers.currentCalls()) : [:]
+            // A meeting app call started while we were already listening to the Mac only: add the
+            // room microphone, or the user's own voice is missing from the record (Tencent Meeting,
+            // Zoom, …). 启动时 launch() still starts without the microphone; this is the call signal.
+            if settings.autoMicOnStart, settings.listenSource == "system", !calls.isEmpty {
+                debugLog("mic auto-on: a meeting app started a call")
+                setMic(true)
+            }
             let reason = w.tick(at: Date(), calls: calls, said: said)
             endWatch = w
             setEnding(w.pending)

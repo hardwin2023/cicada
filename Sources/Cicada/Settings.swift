@@ -287,7 +287,7 @@ final class AppSettings: ObservableObject {
             sourceMode = .auto
         }
         target = defaults.string(forKey: "target") ?? "system"
-        subtitles = defaults.string(forKey: "subtitles") ?? "both"
+        subtitles = defaults.string(forKey: "subtitles") ?? "original"
         notesLanguage = defaults.string(forKey: "notesLanguage") ?? "mine"
         speakEnabled = defaults.bool(forKey: "speakEnabled")
         // Anyone who had it on before this question existed already knows.

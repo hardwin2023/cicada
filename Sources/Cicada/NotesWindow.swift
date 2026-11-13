@@ -905,7 +905,7 @@ struct NotesWindowView: View {
         let lines = session?.lines ?? []
         let speakers = model.settings.speakerVoices ? session.map(SpeakerLabels.numbers) ?? [:] : [:]
         return VStack(alignment: .leading, spacing: 10) {
-            if !speakers.isEmpty, let s = session {
+            if !speakers.isEmpty || (model.settings.speakerVoices && session.map { SpeakerLabels.singleVoice($0.lines) != nil } == true), let s = session {
                 SpeakerStrip(model: model, session: s, editing: $editingVoice)
             }
             TranscriptListView(lines: lines, topics: engine.notes.topics, terms: searchTerms,

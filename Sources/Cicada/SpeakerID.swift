@@ -262,10 +262,19 @@ enum SpeakerLabels {
     /// The voices a meeting already knows by name; `Session.voiceProfiles` is the snapshot.
     static func knownVoices(_ s: Session) -> Set<Int> {
         Set((s.voiceProfiles ?? [:]).keys.compactMap(Int.init))
+            .union((s.voiceNames ?? [:]).keys.compactMap(Int.init))
     }
 
     static func voiceNumbers(_ s: Session) -> [Int: Int] {
         voiceNumbers(s.lines, known: knownVoices(s))
+    }
+
+    /// The only other-side voice in a one-to-one call. `voiceNumbers` deliberately hides a single
+    /// anonymous voice (it would just say 说话人 1 for the whole call), but the user still needs a
+    /// way to name it and remember its voiceprint for the next meeting.
+    static func singleVoice(_ lines: [TranscriptLine]) -> Int? {
+        let voices = Set(lines.filter { $0.speaker == "them" }.compactMap(\.voice))
+        return voices.count == 1 ? voices.first : nil
     }
 
     /// Line id → 1-based speaker number; lines without one show as 对方.

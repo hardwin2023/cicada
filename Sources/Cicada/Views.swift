@@ -1400,7 +1400,7 @@ struct MainWindowView: View {
                     .pinnedHeader($pinned)
                 LazyVStack(alignment: .leading, spacing: 0) {
                     let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s) : [:]
-                    if !speakers.isEmpty { SpeakerStrip(model: model, session: s).padding(.bottom, 8) }
+                    if !speakers.isEmpty || (settings.speakerVoices && SpeakerLabels.singleVoice(s.lines) != nil) { SpeakerStrip(model: model, session: s).padding(.bottom, 8) }
                     let both = RecordList.heardBoth(s.lines)
                     // In a meeting that heard the room and the Mac, a change of place starts a new run too.
                     let starts = SpeakerLabels.runStarts(s.lines, speakers).union(both ? RecordList.placeStarts(s.lines) : [])
