@@ -1319,7 +1319,7 @@ struct MainWindowView: View {
                             .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Palette.secondary)
                     }
                     .padding(.bottom, 8)
-                    let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s.lines) : [:]
+                    let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s) : [:]
                     let starts = SpeakerLabels.runStarts(s.lines, speakers)
                     ForEach(s.lines) { l in
                         quoteRow(l, speaker: speakers[l.id], picked: quoteJump.map { t in l.id == pickedLine(s, t)?.id } ?? false,
@@ -1384,12 +1384,12 @@ struct MainWindowView: View {
                     .id(PinnedHeader.top)
                     .pinnedHeader($pinned)
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s.lines) : [:]
+                    let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s) : [:]
                     if !speakers.isEmpty { SpeakerStrip(model: model, session: s).padding(.bottom, 8) }
                     let both = RecordList.heardBoth(s.lines)
                     // In a meeting that heard the room and the Mac, a change of place starts a new run too.
                     let starts = SpeakerLabels.runStarts(s.lines, speakers).union(both ? RecordList.placeStarts(s.lines) : [])
-                    let voices = SpeakerLabels.voiceNumbers(s.lines)
+                    let voices = SpeakerLabels.voiceNumbers(s)
                     let playingLine = player.lineID(in: s)
                     if s.id != store.liveID {
                         FixReviewBanner(fixes: model.fixes, session: s, onShow: { id in withAnimation { proxy.scrollTo(id, anchor: .center) } },
@@ -1492,7 +1492,7 @@ struct MainWindowView: View {
                     if !label {
                     } else if voices, !me, let s = shownSession {
                         // A click on whose line it is: say it was someone else's.
-                        Menu { assignMenu(s, l, SpeakerLabels.voiceNumbers(s.lines)) } label: {
+                        Menu { assignMenu(s, l, SpeakerLabels.voiceNumbers(s)) } label: {
                             if let speaker { SpeakerTag(number: speaker) } else { UnknownSpeakerTag() }
                         }
                         .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()

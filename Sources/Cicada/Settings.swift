@@ -229,6 +229,12 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
+    /// Recognise people saved in the local voiceprint library. Enrolling a voice is always an
+    /// explicit action with its own consent alert; this switch only controls automatic naming.
+    @Published var speakerMemory: Bool {
+        didSet { save() }
+    }
+
     /// 会中改正听错的词: finished sentences carry the word list to the AI service, which points out
     /// misheard words (`Correction`). On by default; does nothing without an AI service.
     @Published var fixMisheard: Bool {
@@ -326,6 +332,7 @@ final class AppSettings: ObservableObject {
             defaults.set(true, forKey: "speakerVoices")
             defaults.set(true, forKey: "speakerVoicesRegular")
         }
+        speakerMemory = defaults.object(forKey: "speakerMemory") as? Bool ?? true
     }
 
     private func save() {
@@ -378,6 +385,7 @@ final class AppSettings: ObservableObject {
         defaults.set(diagnostics, forKey: "diagnostics")
         defaults.set(notesCapturable, forKey: "notesCapturable")
         defaults.set(speakerVoices, forKey: "speakerVoices")
+        defaults.set(speakerMemory, forKey: "speakerMemory")
         defaults.set(fixMisheard, forKey: "fixMisheard")
         defaults.set(askNames, forKey: "askNames")
     }

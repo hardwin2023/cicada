@@ -92,14 +92,15 @@ final class Voiceprints: @unchecked Sendable {
 
     private init(model: MLModel) { self.model = model }
 
-    static func load() throws -> Voiceprints {
-        guard let pkg = Bundle.main.url(forResource: "SpeakerEmbedding", withExtension: "mlpackage") else {
+    static func load(packageURL: URL? = nil) throws -> Voiceprints {
+        guard let pkg = packageURL ?? Bundle.main.url(forResource: "SpeakerEmbedding", withExtension: "mlpackage") else {
             throw CocoaError(.fileNoSuchFile)
         }
         let size = (try? FileManager.default.attributesOfItem(atPath: pkg.appendingPathComponent("Data/com.apple.CoreML/weights/weight.bin").path)[.size] as? Int) ?? 0
         let cache = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(DevBuild.supportFolder).appendingPathComponent("SpeakerEmbedding-\(size).mlmodelc")
         if !FileManager.default.fileExists(atPath: cache.path) {
+            try? FileManager.default.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
             let compiled = try MLModel.compileModel(at: pkg)
             try? FileManager.default.removeItem(at: cache)
             try FileManager.default.moveItem(at: compiled, to: cache)
@@ -161,6 +162,39 @@ struct VoiceClusterer {
 
     private(set) var sums: [[Float]] = []
 
+    /// A unit-length centroid for a voice, for saving it to the profile library.
+    func centroid(_ voice: Int) -> [Float]? {
+        guard sums.indices.contains(voice) else { return nil }
+        return SpeakerEmbedding.normalized(sums[voice])
+    }
+
+    /// The voice closest to `embedding`, when it is at least `minimum` similar.
+    func closest(to embedding: [Float], minimum: Float) -> Int? {
+        guard let probe = SpeakerEmbedding.normalized(embedding) else { return nil }
+        var best: Int?
+        var bestScore = minimum
+        for i in sums.indices {
+            guard let c = centroid(i), let score = SpeakerEmbedding.cosine(probe, c) else { continue }
+            if score >= bestScore { best = i; bestScore = score }
+        }
+        return best
+    }
+
+    /// Start a voice from a known profile's centroid. The next lines join it by the ordinary
+    /// 0.5 within-meeting threshold, while the profile id stays at the session level.
+    mutating func seed(_ embedding: [Float]) -> Int? {
+        guard let v = SpeakerEmbedding.normalized(embedding) else { return nil }
+        sums.append(v)
+        return sums.count - 1
+    }
+
+    /// Add a profile centroid to an existing voice after the user confirms a suggestion, so later
+    /// lines of that person keep joining it more readily.
+    mutating func adopt(_ embedding: [Float], into voice: Int) {
+        guard sums.indices.contains(voice), let v = SpeakerEmbedding.normalized(embedding) else { return }
+        vDSP_vadd(sums[voice], 1, v, 1, &sums[voice], 1, vDSP_Length(sums[voice].count))
+    }
+
     /// The user said two voices are one: later lines like either go to `into`.
     mutating func merge(_ from: Int, into: Int) {
         guard sums.indices.contains(from), sums.indices.contains(into), from != into else { return }
@@ -203,22 +237,40 @@ enum SpeakerLabels {
         return text.unicodeScalars.filter { $0.properties.isIdeographic || (0x3040...0x30FF).contains($0.value) || (0xAC00...0xD7A3).contains($0.value) }.count >= 4
     }
 
-    /// Voice id → 1-based speaker number, for the voices on show.
-    static func voiceNumbers(_ lines: [TranscriptLine]) -> [Int: Int] {
+    /// Voice id → 1-based speaker number, for the voices on show. `known`: voices remembered by
+    /// the local voiceprint library; they get a number (and a name) before the five-line rule, so a
+    /// returning customer is named from their first sentence. A single known voice may be shown
+    /// on its own, unlike an anonymous one (a one-to-one call otherwise stays "对方").
+    static func voiceNumbers(_ lines: [TranscriptLine], known: Set<Int> = []) -> [Int: Int] {
         var count: [Int: Int] = [:], reached: [Int: Int] = [:]
         for (i, l) in lines.enumerated() where l.speaker == "them" {
             guard let v = l.voice, substantive(l.src) else { continue }
             count[v, default: 0] += 1
-            if count[v] == shownAfter { reached[v] = i }
+            if reached[v] == nil {
+                if known.contains(v) {
+                    reached[v] = i
+                } else if count[v] == shownAfter {
+                    reached[v] = i
+                }
+            }
         }
         let shown = reached.keys.sorted { reached[$0]! < reached[$1]! }
-        guard shown.count >= 2 else { return [:] }
+        guard shown.count >= 2 || !known.isEmpty else { return [:] }
         return Dictionary(uniqueKeysWithValues: shown.enumerated().map { ($1, $0 + 1) })
     }
 
+    /// The voices a meeting already knows by name; `Session.voiceProfiles` is the snapshot.
+    static func knownVoices(_ s: Session) -> Set<Int> {
+        Set((s.voiceProfiles ?? [:]).keys.compactMap(Int.init))
+    }
+
+    static func voiceNumbers(_ s: Session) -> [Int: Int] {
+        voiceNumbers(s.lines, known: knownVoices(s))
+    }
+
     /// Line id → 1-based speaker number; lines without one show as 对方.
-    static func numbers(_ lines: [TranscriptLine]) -> [String: Int] {
-        let number = voiceNumbers(lines)
+    static func numbers(_ lines: [TranscriptLine], known: Set<Int> = []) -> [String: Int] {
+        let number = voiceNumbers(lines, known: known)
         var out: [String: Int] = [:]
         for l in lines where l.speaker == "them" {
             if let v = l.voice, let n = number[v] { out[l.id] = n }
@@ -226,13 +278,20 @@ enum SpeakerLabels {
         return out
     }
 
-    /// Speaker number → name: the user's, else Ling's guess (unless the user turned it down).
+    static func numbers(_ s: Session) -> [String: Int] {
+        numbers(s.lines, known: knownVoices(s))
+    }
+
+    /// Speaker number → name: the user's, else the local voiceprint name, else Ling's guess.
     static func names(_ s: Session) -> [Int: String] {
-        guard s.voiceNames != nil || s.voiceGuesses != nil else { return [:] }
+        let known = knownVoices(s)
+        guard s.voiceNames != nil || s.voiceGuesses != nil || !known.isEmpty else { return [:] }
         var out: [Int: String] = [:]
-        for (v, n) in voiceNumbers(s.lines) {
+        for (v, n) in voiceNumbers(s.lines, known: known) {
             if let mine = s.voiceNames?[String(v)] {
                 if !mine.isEmpty { out[n] = mine }
+            } else if let p = s.voiceProfiles?[String(v)], !p.name.isEmpty {
+                out[n] = p.name
             } else if let g = s.voiceGuesses?[String(v)] {
                 out[n] = g.name
             }
@@ -240,10 +299,11 @@ enum SpeakerLabels {
         return out
     }
 
+
     /// Speaker number → Ling's guess, for the voices whose shown name is that guess.
     static func guessed(_ s: Session) -> [Int: VoiceGuess] {
         var out: [Int: VoiceGuess] = [:]
-        for (v, n) in voiceNumbers(s.lines) where s.voiceNames?[String(v)] == nil {
+        for (v, n) in voiceNumbers(s.lines, known: knownVoices(s)) where s.voiceNames?[String(v)] == nil {
             if let g = s.voiceGuesses?[String(v)] { out[n] = g }
         }
         return out
@@ -287,6 +347,12 @@ enum SpeakerLabels {
     static func shownCount(_ lines: [TranscriptLine]) -> Int { Set(numbers(lines).values).count }
 }
 
+/// A voice for one line, plus the profile it matched (if any).
+struct SpeakerAssignment: Equatable {
+    var voice: Int?
+    var match: SpeakerProfileMatch?
+}
+
 /// Runs voiceprints off the main thread and hands back a voice per line, in arrival order.
 @MainActor
 final class SpeakerTagger {
@@ -294,24 +360,61 @@ final class SpeakerTagger {
     private nonisolated(unsafe) var model: Voiceprints?
     private nonisolated(unsafe) var loadFailed = false
     private nonisolated(unsafe) var clusterer = VoiceClusterer()
+    /// Local voice id -> profile id. Cleared with the clusterer at the start of a meeting.
+    private nonisolated(unsafe) var voiceProfiles: [Int: UUID] = [:]
+    /// A suggestion is sent once per local voice, not on every line.
+    private nonisolated(unsafe) var suggestedVoices: Set<Int> = []
+    var profiles: SpeakerProfileStore?
+    var policy = SpeakerMatchPolicy()
     var onVoice: ((_ lineID: String, _ voice: Int) -> Void)?
+    var onProfile: ((_ lineID: String, _ voice: Int, _ match: SpeakerProfileMatch) -> Void)?
+    var onSuggestion: ((_ lineID: String, _ voice: Int, _ match: SpeakerProfileMatch) -> Void)?
 
-    /// A new meeting: forget the voices of the last one.
-    func reset() { queue.async { [self] in clusterer = VoiceClusterer() } }
+    /// A new meeting: forget the voices of the last one. Global profiles stay in the store.
+    func reset() {
+        queue.async { [self] in
+            clusterer = VoiceClusterer()
+            voiceProfiles = [:]
+            suggestedVoices = []
+        }
+    }
 
     func merge(_ from: Int, into: Int) { queue.async { [self] in clusterer.merge(from, into: into) } }
 
+    /// Start using a profile for an existing local voice after the user accepted a suggestion.
+    func bind(voice: Int, profile: SpeakerProfile) {
+        queue.async { [self] in
+            voiceProfiles[voice] = profile.id
+            suggestedVoices.insert(voice)
+            clusterer.adopt(profile.embedding, into: voice)
+        }
+    }
+
+    /// The unit centroid of a voice, for enrolling it in the profile library.
+    func centroid(voice: Int, _ done: @escaping @MainActor ([Float]?) -> Void) {
+        queue.async { [self] in
+            let v = clusterer.centroid(voice)
+            DispatchQueue.main.async { MainActor.assumeIsolated { done(v) } }
+        }
+    }
+
     /// `done` once the line has its voice, or is known to have none.
     func tag(lineID: String, samples: [Float], done: @escaping @MainActor () -> Void = {}) {
-        voice(of: samples) { [weak self] voice in
-            if let voice { self?.onVoice?(lineID, voice) }
+        voice(of: samples) { [weak self] assignment in
+            if let voice = assignment.voice { self?.onVoice?(lineID, voice) }
+            if let voice = assignment.voice, let match = assignment.match {
+                if match.kind == .auto { self?.onProfile?(lineID, voice, match) }
+                else { self?.onSuggestion?(lineID, voice, match) }
+            }
             done()
         }
     }
 
     /// The voice of a line not recorded yet; nil when unsure. Like `tag`, it counts towards that voice.
-    func voice(of samples: [Float], _ done: @escaping @MainActor (Int?) -> Void) {
+    func voice(of samples: [Float], _ done: @escaping @MainActor (SpeakerAssignment) -> Void) {
         let seconds = Double(samples.count) / 16000
+        let profiles = profiles
+        let policy = policy
         queue.async { [self] in
             if model == nil, !loadFailed {
                 do { model = try Voiceprints.load() } catch {
@@ -319,8 +422,38 @@ final class SpeakerTagger {
                     debugLog("voiceprint model failed to load: \(error)")
                 }
             }
-            let voice = model.flatMap { $0.embed(samples) }.flatMap { clusterer.label($0, seconds: seconds) }
-            DispatchQueue.main.async { MainActor.assumeIsolated { done(voice) } }
+            guard let embedding = model.flatMap({ $0.embed(samples) }) else {
+                DispatchQueue.main.async { MainActor.assumeIsolated { done(SpeakerAssignment()) } }
+                return
+            }
+            var voice: Int?
+            var matched = profiles?.match(embedding, policy: policy)
+            if let match = matched, match.kind == .auto {
+                if let existing = voiceProfiles.first(where: { $0.value == match.profile.id })?.key {
+                    voice = existing
+                    matched = nil                 // already named in this meeting
+                } else if let nearby = clusterer.closest(to: match.profile.embedding, minimum: VoiceClusterer.join),
+                          let bound = voiceProfiles[nearby] {
+                    // The matching cluster already belongs to someone else: never silently move it.
+                    voice = clusterer.label(embedding, seconds: seconds)
+                    matched = bound == match.profile.id ? nil : matched.flatMap {
+                        SpeakerProfileMatch(profile: $0.profile, similarity: $0.similarity, kind: .suggested)
+                    }
+                } else {
+                    let nearby = clusterer.closest(to: match.profile.embedding, minimum: VoiceClusterer.join)
+                    voice = nearby ?? clusterer.seed(match.profile.embedding)
+                    if let voice { voiceProfiles[voice] = match.profile.id }
+                }
+            } else {
+                voice = clusterer.label(embedding, seconds: seconds)
+                if let v = voice, matched != nil, voiceProfiles[v] != nil { matched = nil }
+            }
+            if let match = matched, let v = voice, match.kind == .suggested, suggestedVoices.contains(v) {
+                matched = nil                     // already offered for this voice
+            }
+            if let match = matched, match.kind == .suggested, let v = voice { suggestedVoices.insert(v) }
+            let assignment = SpeakerAssignment(voice: voice, match: matched)
+            DispatchQueue.main.async { MainActor.assumeIsolated { done(assignment) } }
         }
     }
 }
@@ -332,7 +465,7 @@ final class SpeakerTagger {
 enum SpeakerNameGuess {
     /// The transcript as Ling sees it, newest 400 lines, with speaker labels; nil when no voices are shown.
     static func content(_ s: Session) -> String? {
-        let numbers = SpeakerLabels.numbers(s.lines)
+        let numbers = SpeakerLabels.numbers(s)
         guard !numbers.isEmpty else { return nil }
         let lines = s.lines.suffix(400)
         var out = "Meeting transcript. Speakers: 你 = the user; 说话人N = one person on the other side, told apart by voice; 对方 = someone on the other side, not identified.\n"
@@ -373,7 +506,7 @@ enum SpeakerNameGuess {
         guard let data = text.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let list = obj["speakers"] as? [[String: Any]] else { return ([:], [:]) }
-        let voiceOf = Dictionary(uniqueKeysWithValues: SpeakerLabels.voiceNumbers(s.lines).map { ($1, $0) })
+        let voiceOf = Dictionary(uniqueKeysWithValues: SpeakerLabels.voiceNumbers(s).map { ($1, $0) })
         let lines = Array(s.lines.suffix(400))
         func count(_ v: Int) -> Int { s.lines.filter { $0.voice == v }.count }
         var out: [Int: VoiceGuess] = [:], refuted: [Int: String] = [:]
@@ -442,7 +575,7 @@ final class SpeakerNamer: ObservableObject {
         guard ling.hasKey, !busy.contains(id), let s = store.session(id) else { return }
         guard force || s.lines.count >= (askedAt[id] ?? -1000) + 20, let content = SpeakerNameGuess.content(s) else { return }
         // Everyone already has a name the user gave: nothing to ask.
-        let numbers = SpeakerLabels.voiceNumbers(s.lines)
+        let numbers = SpeakerLabels.voiceNumbers(s)
         if numbers.keys.allSatisfy({ s.voiceNames?[String($0)] != nil }) { return }
         busy.insert(id)
         askedAt[id] = s.lines.count

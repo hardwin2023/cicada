@@ -293,17 +293,18 @@ final class NotesEngine: ObservableObject {
         let from = final ? 0 : min(base.covered, lines.count)
         let lang = language(id)
         let names = TranscriptExport.voices ? SpeakerLabels.names(session) : [:]
+        let known = SpeakerLabels.knownVoices(session)
         // A live update returns only the last topics: when it rewrote them all, its reply grew with
         // the meeting until, about an hour in, it was cut off at max_tokens or fell into a loop and
         // the notes stopped updating. The final pass still rewrites everything once.
         let frozen = final || fresh ? 0 : max(0, base.topics.count - Self.editableTopics)
-        let prompt = Self.prompt(notes: base, lines: lines, from: from, language: lang, final: final, names: names, frozen: frozen)
+        let prompt = Self.prompt(notes: base, lines: lines, from: from, language: lang, final: final, names: names, frozen: frozen, known: known)
         let started = Date()
         do {
             // The final pass sends only the transcript, with no notes in the reader's language to
             // follow: given a long English meeting the model drifts into English. Say the language
             // again where it is read last, and try once more if the reply still isn't in it.
-            var next = final ? await longFinal(lines, names: names, language: lang, startedAt: session.lines.first?.t ?? 0) : nil
+            var next = final ? await longFinal(lines, names: names, known: known, language: lang, startedAt: session.lines.first?.t ?? 0) : nil
             for attempt in 1...(final || fresh ? 2 : 1) where next == nil {
                 let raw = try await ling.chat(content: prompt, instruction: "Update the notes. Write them in \(lang).",
                                               priority: .notes, json: true, maxTokens: 6000, timeout: 90, patient: final)
@@ -356,7 +357,7 @@ final class NotesEngine: ObservableObject {
 
     /// A long meeting's final pass: each part noted on its own, all at once, then merged into one.
     /// nil when a step fails: the caller then makes one pass over the whole transcript, as before.
-    private func longFinal(_ lines: [TranscriptLine], names: [Int: String], language lang: String,
+    private func longFinal(_ lines: [TranscriptLine], names: [Int: String], known: Set<Int>, language lang: String,
                            startedAt: Double) async -> MeetingNotes? {
         let parts = Self.parts(lines)
         guard parts.count > 1 else { return nil }
@@ -366,7 +367,7 @@ final class NotesEngine: ObservableObject {
         await withTaskGroup(of: (Int, String?).self) { group in
             for (i, range) in parts.enumerated() {
                 let prompt = Self.prompt(notes: MeetingNotes(), lines: Array(lines.prefix(range.upperBound)), from: range.lowerBound,
-                                         language: lang, final: true, names: names, part: (i + 1, parts.count))
+                                         language: lang, final: true, names: names, part: (i + 1, parts.count), known: known)
                 group.addTask { [ling] in
                     let raw = try? await ling.chat(content: prompt, instruction: "Write the notes for this part. Write them in \(lang).",
                                                    priority: .notes, json: true, maxTokens: 6000, timeout: 90)
@@ -513,8 +514,9 @@ final class NotesEngine: ObservableObject {
 
     /// `part`: in a long meeting's final pass, which part `from..<lines.count` is (1-based, of `of`).
     static func prompt(notes: MeetingNotes, lines: [TranscriptLine], from: Int, language: String, final: Bool,
-                       names: [Int: String] = [:], frozen: Int = 0, part: (index: Int, of: Int)? = nil) -> String {
-        let numbers = TranscriptExport.voices ? SpeakerLabels.numbers(lines) : [:]
+                       names: [Int: String] = [:], frozen: Int = 0, part: (index: Int, of: Int)? = nil,
+                       known: Set<Int> = []) -> String {
+        let numbers = TranscriptExport.voices ? SpeakerLabels.numbers(lines, known: known) : [:]
         func line(_ i: Int) -> String {
             let l = lines[i]
             // A named voice goes as its name: notes then say "George" rather than "说话人2".

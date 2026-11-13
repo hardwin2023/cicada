@@ -903,7 +903,7 @@ struct NotesWindowView: View {
     private var transcript: some View {
         let ms = matches
         let lines = session?.lines ?? []
-        let speakers = model.settings.speakerVoices ? SpeakerLabels.numbers(lines) : [:]
+        let speakers = model.settings.speakerVoices ? session.map(SpeakerLabels.numbers) ?? [:] : [:]
         return VStack(alignment: .leading, spacing: 10) {
             if !speakers.isEmpty, let s = session {
                 SpeakerStrip(model: model, session: s, editing: $editingVoice)
@@ -913,7 +913,7 @@ struct NotesWindowView: View {
                                partialShown: TranscriptPartial.shows(model.liveSource, live: live, after: lines.last?.src),
                                jumpTo: jumpTo, speakers: speakers, startedAt: store.liveStart,
                                identifying: model.identifyingLanguage,
-                               voices: speakers.isEmpty ? [:] : SpeakerLabels.voiceNumbers(lines), marked: editingVoice,
+                               voices: speakers.isEmpty ? [:] : session.map(SpeakerLabels.voiceNumbers) ?? [:], marked: editingVoice,
                                places: RecordList.heardBoth(lines), settling: model.settling, voicePending: model.voicePending,
                                onAssign: { ids, voice in if let s = session { model.assignLines(session: s.id, ids, to: voice) } },
                                onRevert: { lineID, fix in if let s = session { model.fixes.revert(fix, lineID: lineID, in: s.id) } }) {

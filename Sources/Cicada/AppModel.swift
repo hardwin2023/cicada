@@ -165,15 +165,22 @@ final class AppModel: ObservableObject {
     /// 存到文件夹 (settings › 通用).
     lazy var folderExport = FolderExporter(store: store, settings: settings)
     lazy var notesWindow = NotesWindowController(model: self)
-    lazy var importer = FileImporter(store: store, settings: settings, translator: translator)
+    lazy var importer = FileImporter(store: store, settings: settings, translator: translator, profiles: profiles)
     let vocabulary = Vocabulary(url: Vocabulary.defaultURL)
     lazy var fixes = LiveFixes(store: store, vocabulary: vocabulary, settings: settings)
     let sample = SamplePlayer()
     let speakers = SpeakerTagger()
+    /// The local voiceprint library; never sent anywhere. See SpeakerProfiles.swift.
+    let profiles = SpeakerProfileStore()
+    /// A UI copy of `profiles`, refreshed by its onChange callback.
+    @Published private(set) var speakerProfiles: [SpeakerProfile] = []
+    @Published var speakerLibraryShown = false
+    @Published private(set) var speakerMemoryBusy = false
     lazy var speakerNamer = SpeakerNamer(ling: ling, store: store)
     /// The last speaker edit, offered as 撤销 at the bottom of both windows for a few seconds.
     @Published var speakerUndo: SpeakerUndo?
     private var speakerSetting: AnyCancellable?
+    private var speakerMemorySetting: AnyCancellable?
     private var handsFreeSetting: AnyCancellable?
     var openOnboarding: (() -> Void)?
 
@@ -237,6 +244,23 @@ final class AppModel: ObservableObject {
             self.store.setVoice(lineID: line, voice)
             if let id = self.store.liveID { self.speakerNamer.guess(id) }
         }
+        speakerProfiles = profiles.all()
+        profiles.onChange = { [weak self] all in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.speakerProfiles = all } }
+        }
+        speakers.profiles = profiles
+        speakers.onProfile = { [weak self] line, voice, match in
+            guard let self, let id = self.store.liveID else { return }
+            self.store.setVoice(lineID: line, voice)
+            self.store.setVoiceProfile(id, voice: voice, ref: match.ref)
+            self.profiles.markSeen(id: match.profile.id)
+            self.speakerNamer.guess(id)
+        }
+        speakers.onSuggestion = { [weak self] line, voice, match in
+            guard let self, let id = self.store.liveID else { return }
+            self.store.setVoice(lineID: line, voice)
+            self.store.setVoiceSuggestion(id, voice: voice, match.ref)
+        }
         // 不用按键 runs only while a meeting is being listened to: its lines are what tells the meeting's
         // echo (`meetingSaid`), and the running unit mutes the built-in mic for other apps (#24), which
         // then hear the virtual mic anyway. It pauses while 打开麦克风 is on: the room shares the unit and
@@ -256,6 +280,10 @@ final class AppModel: ObservableObject {
             TranscriptExport.voices = on
             self?.listen.router.setVoiceCapture(on)
             self?.roomListen.router.setVoiceCapture(on)
+        }
+        speakers.profiles = settings.speakerMemory ? profiles : nil
+        speakerMemorySetting = settings.$speakerMemory.sink { [weak self] on in
+            self?.speakers.profiles = on ? self?.profiles : nil
         }
         listen.onTranslated = { [weak self] segID, text in self?.translated(segID, text) }
         roomListen.onTranslated = { [weak self] segID, text in self?.translated(segID, text) }
@@ -1373,7 +1401,7 @@ final class AppModel: ObservableObject {
     /// Name a voice ("" keeps 说话人 N, nil goes back to Ling's guess).
     func renameSpeaker(session id: String, voice: Int, _ name: String?) {
         guard let s = store.session(id) else { return }
-        let n = SpeakerLabels.voiceNumbers(s.lines)[voice] ?? 0
+        let n = SpeakerLabels.voiceNumbers(s)[voice] ?? 0
         let before = SpeakerLabels.label(n, SpeakerLabels.names(s))
         speakerEdit(id) { store.setVoiceName(id, voice: voice, name) }
         let after = store.session(id).map { SpeakerLabels.label(n, SpeakerLabels.names($0)) } ?? before
@@ -1383,7 +1411,7 @@ final class AppModel: ObservableObject {
     /// Two voices are one person. While listening the voiceprints merge too, which 撤销 can't take back.
     func mergeSpeaker(session id: String, _ from: Int, into: Int) {
         guard let s = store.session(id) else { return }
-        let numbers = SpeakerLabels.voiceNumbers(s.lines), names = SpeakerLabels.names(s)
+        let numbers = SpeakerLabels.voiceNumbers(s), names = SpeakerLabels.names(s)
         let a = SpeakerLabels.label(numbers[from] ?? 0, names), b = SpeakerLabels.label(numbers[into] ?? 0, names)
         speakerEdit(id) { store.mergeVoice(id, from, into: into) }
         if id == store.liveID { speakers.merge(from, into: into) }
@@ -1396,7 +1424,7 @@ final class AppModel: ObservableObject {
         let first = s.lines.first { lines.contains($0.id) }
         speakerEdit(id) { store.setLineVoices(id, lines: lines, voice) }
         guard let s2 = store.session(id) else { return }
-        let who = SpeakerLabels.label(SpeakerLabels.voiceNumbers(s2.lines)[voice] ?? 0, SpeakerLabels.names(s2))
+        let who = SpeakerLabels.label(SpeakerLabels.voiceNumbers(s2)[voice] ?? 0, SpeakerLabels.names(s2))
         speakerUndo?.text = L("\(first.map { TranscriptExport.clock($0.t) } ?? "") 这句已改给 \(who)")
     }
 
@@ -1416,6 +1444,116 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
             if self?.speakerUndo?.id == undo.id { self?.speakerUndo = nil }
         }
+    }
+
+    // MARK: Voiceprint library
+
+    /// The user accepted a close match: name this meeting's voice from the library and let the
+    /// live clusterer use the profile for later lines.
+    func acceptSpeakerSuggestion(session id: String, voice: Int) {
+        guard let s = store.session(id), let ref = s.voiceSuggestions?[String(voice)],
+              let profile = profiles.snapshot().first(where: { $0.id == ref.id }) else { return }
+        speakerEdit(id) { store.setVoiceProfile(id, voice: voice, ref: ref) }
+        profiles.markSeen(id: profile.id)
+        if id == store.liveID { speakers.bind(voice: voice, profile: profile) }
+        speakerUndo?.text = L("已认出 \(ref.name)")
+    }
+
+    func dismissSpeakerSuggestion(session id: String, voice: Int) {
+        store.setVoiceSuggestion(id, voice: voice, nil)
+    }
+
+    /// "不是 TA": drop this meeting's binding; never touch the global profile.
+    func forgetSpeaker(session id: String, voice: Int) {
+        guard store.session(id)?.voiceProfiles?[String(voice)] != nil else { return }
+        speakerEdit(id) { store.setVoiceProfile(id, voice: voice, ref: nil) }
+        speakerUndo?.text = L("这次不再按声纹认人")
+    }
+
+    /// Explicit enrolment: the caller has already named the voice. The alert is the consent step;
+    /// voiceprints are biometric data and are never saved from a background match alone.
+    func rememberSpeaker(session id: String, voice: Int, name: String? = nil) {
+        guard let s = store.session(id) else { return }
+        let n = SpeakerLabels.voiceNumbers(s)[voice] ?? 0
+        let chosen = (name ?? s.voiceNames?[String(voice)] ?? s.voiceProfiles?[String(voice)]?.name
+                        ?? SpeakerLabels.names(s)[n] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !chosen.isEmpty else {
+            alert(L("先给这个人起个名字"), L("在“是谁”里输入名字后，再记住这个声音。"))
+            return
+        }
+        guard let audio = audioURL(for: s) else {
+            alert(L("没有可用的录音"), L("打开“保存会议录音”，或用导入的录音文件建立声纹。"))
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = L("记住“\(chosen)”的声音？")
+        alert.informativeText = L("声纹只保存在这台 Mac，用于以后会议自动认出这个人；可以随时在声纹库里删除。")
+        alert.addButton(withTitle: L("记住"))
+        alert.addButton(withTitle: L("不用"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        speakerMemoryBusy = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.speakerMemoryBusy = false }
+            do {
+                let result = try await SpeakerEnrollment.build(session: s, voice: voice, audioURL: audio)
+                let existing = s.voiceProfiles?[String(voice)]?.id
+                let profile: SpeakerProfile?
+                if let existing, self.profiles.updateEmbedding(id: existing, embedding: result.embedding) {
+                    _ = self.profiles.rename(id: existing, to: chosen)
+                    profile = self.profiles.snapshot().first { $0.id == existing }
+                } else {
+                    profile = self.profiles.remember(name: chosen, embedding: result.embedding)
+                }
+                guard let profile else {
+                    self.alert(L("这个声音还不够清楚"), L("换一段更长、更安静的发言再试。"))
+                    return
+                }
+                self.store.setVoiceProfile(id, voice: voice, ref: VoiceProfileRef(id: profile.id, name: profile.name, similarity: 1))
+                self.profiles.markSeen(id: profile.id)
+                if id == self.store.liveID, let full = self.profiles.snapshot().first(where: { $0.id == profile.id }) {
+                    self.speakers.bind(voice: voice, profile: full)
+                }
+                self.speakerProfiles = self.profiles.all()
+                debugLog("voice profiles: remembered \(chosen) from \(result.clips) clips / \(Int(result.seconds)) s")
+            } catch {
+                self.alert(L("没记住这个声音"), error.localizedDescription)
+            }
+        }
+    }
+
+    func renameSpeakerProfile(id: UUID, to name: String) {
+        guard profiles.rename(id: id, to: name) else { return }
+        speakerProfiles = profiles.all()
+    }
+
+    func deleteSpeakerProfile(id: UUID) {
+        profiles.delete(id: id)
+        speakerProfiles = profiles.all()
+    }
+
+    func deleteAllSpeakerProfiles() {
+        profiles.deleteAll()
+        speakerProfiles = profiles.all()
+    }
+
+    func speakerSuggestion(session id: String, voice: Int) -> VoiceProfileRef? {
+        store.session(id)?.voiceSuggestions?[String(voice)]
+    }
+
+    private func audioURL(for s: Session) -> URL? {
+        if let path = s.sourcePath, s.sourceFile != nil { return URL(fileURLWithPath: path) }
+        let system = store.systemAudioURL(s.id)
+        return FileManager.default.fileExists(atPath: system.path) ? system : nil
+    }
+
+    private func alert(_ title: String, _ message: String) {
+        let a = NSAlert()
+        a.messageText = title
+        a.informativeText = message
+        a.addButton(withTitle: L("知道了"))
+        a.runModal()
     }
 
     // MARK: 电脑和会议室
@@ -1594,17 +1732,18 @@ final class AppModel: ObservableObject {
         // Two voices never share a line: hear whose this is first (a few hundredths of a second).
         if settings.speakerVoices, let samples = seg.voiceSamples, seg.text.filter(\.isLetter).count >= 2 {
             heldJoin = (seg, t, nil)
-            speakers.voice(of: samples) { [weak self] voice in self?.heardVoice(seg, voice) }
+            speakers.voice(of: samples) { [weak self] assignment in self?.heardVoice(seg, assignment) }
             return
         }
         join(seg, onto: prev)
     }
 
-    private func heardVoice(_ seg: Segment, _ voice: Int?) {
+    private func heardVoice(_ seg: Segment, _ assignment: SpeakerAssignment) {
+        let voice = assignment.voice
         guard let held = heldJoin, held.seg.id == seg.id else {
             // Already recorded on its own (another line came first).
             if let line = lineForSegment[seg.id] {
-                if let voice { speakers.onVoice?(line, voice) }
+                apply(assignment, to: line)
                 voicePending.remove(line)
             }
             return
@@ -1616,7 +1755,22 @@ final class AppModel: ObservableObject {
             join(seg, onto: prev)   // the earlier line's voice stays
         } else {
             appendHeard(seg, t: held.t, translation: held.translation)
-            if let voice, let line = lineForSegment[seg.id] { speakers.onVoice?(line, voice) }
+            if let line = lineForSegment[seg.id] { apply(assignment, to: line) }
+        }
+    }
+
+    /// Put a voice (and a library match, if any) on a recorded line. Used when a line was held
+    /// back for its voice instead of going through `SpeakerTagger.tag`.
+    private func apply(_ assignment: SpeakerAssignment, to line: String) {
+        guard let voice = assignment.voice else { return }
+        speakers.onVoice?(line, voice)
+        guard let match = assignment.match, let id = store.liveID else { return }
+        store.setVoice(lineID: line, voice)
+        if match.kind == .auto {
+            store.setVoiceProfile(id, voice: voice, ref: match.ref)
+            profiles.markSeen(id: match.profile.id)
+        } else {
+            store.setVoiceSuggestion(id, voice: voice, match.ref)
         }
     }
 

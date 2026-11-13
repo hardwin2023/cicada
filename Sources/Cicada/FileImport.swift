@@ -41,14 +41,16 @@ final class FileImporter: ObservableObject {
     let store: SessionStore
     let settings: AppSettings
     let translator: TranslationService
+    let profiles: SpeakerProfileStore
     private var task: Task<Void, Never>?
     /// The running `SpeechAnalyzer` (macOS 26) or `RecognitionStream`, for 停止转写.
     private var analyzer: AnyObject?
 
-    init(store: SessionStore, settings: AppSettings, translator: TranslationService) {
+    init(store: SessionStore, settings: AppSettings, translator: TranslationService, profiles: SpeakerProfileStore) {
         self.store = store
         self.settings = settings
         self.translator = translator
+        self.profiles = profiles
     }
 
     var busy: Bool { current != nil }
@@ -180,7 +182,7 @@ final class FileImporter: ObservableObject {
             var n = 0
             var translations: [Task<Void, Never>] = []
             // 说话人识别, as when listening: each line's stretch of the file gets a voiceprint.
-            let voices = settings.speakerVoices ? ImportVoices(pcm: pcm, store: store, session: job.id) : nil
+            let voices = settings.speakerVoices ? ImportVoices(pcm: pcm, store: store, session: job.id, profiles: profiles) : nil
             defer { voices?.stop() }
             // `end`: when the recognized stretch ends, so its last line's sound ends there.
             let add = { (sentences: [(text: String, t: Double)], end: Double, heard: String?, translation: String?) in
@@ -436,11 +438,22 @@ final class ImportVoices {
     /// a 重新转写 that reuses the line ids.
     private var on = true
 
-    init(pcm: URL, store: SessionStore, session id: String) {
+    init(pcm: URL, store: SessionStore, session id: String, profiles: SpeakerProfileStore) {
         file = try? AVAudioFile(forReading: pcm)
+        tagger.profiles = profiles
         tagger.onVoice = { [weak self, weak store] line, voice in
             guard self?.on == true else { return }
             store?.setVoice(in: id, lineID: line, voice)
+        }
+        tagger.onProfile = { [weak self, weak store] line, voice, match in
+            guard self?.on == true else { return }
+            store?.setVoice(in: id, lineID: line, voice)
+            store?.setVoiceProfile(id, voice: voice, ref: match.ref)
+        }
+        tagger.onSuggestion = { [weak self, weak store] line, voice, match in
+            guard self?.on == true else { return }
+            store?.setVoice(in: id, lineID: line, voice)
+            store?.setVoiceSuggestion(id, voice: voice, match.ref)
         }
     }
 
