@@ -94,4 +94,19 @@ import Testing
         // Languages with no speech model are skipped; English is always there.
         #expect(locales(likelySourceLanguages(last: "xx", systemLanguages: ["it-IT"])) == ["en-US"])
     }
+
+    @Test func autoStartsInTheMacLanguageNotEnglish() {
+        let en = sourceLanguages.first { $0.code == "en" }!
+        let zh = sourceLanguages.first { $0.code == "zh-CN" }!
+        // `candidates` comes in sourceLanguages order, English first. A fresh Chinese Mac must
+        // still start in Chinese; otherwise the English model transcribes Chinese as English.
+        #expect(initialSourceLanguage(candidates: [en, zh], last: nil,
+                                      systemLanguages: ["zh-Hans-CN"]) == zh)
+        // A last meeting in English still wins, as before.
+        #expect(initialSourceLanguage(candidates: [en, zh], last: "en-US",
+                                      systemLanguages: ["zh-Hans-CN"]) == en)
+        // Only English installed: English is the only thing it can start.
+        #expect(initialSourceLanguage(candidates: [en], last: nil,
+                                      systemLanguages: ["zh-Hans-CN"]) == en)
+    }
 }
