@@ -34,13 +34,25 @@ sealed class SystemAudioTap : IAudioSource
         thread?.Join(1000);
     }
 
+    /// A capture that breaks (the Windows Audio service restarting, a driver or a dock's audio
+    /// resetting) opens again; only one that keeps failing ends listening, with its reason.
     void Run()
     {
-        try { Capture(); Ended?.Invoke(null); }
-        catch (Exception e)
+        int failures = 0;
+        while (true)
         {
-            Log.Debug($"tap: failed {e.GetType().Name} 0x{e.HResult:X8}");
-            Ended?.Invoke(e.Message);
+            var started = DateTime.UtcNow;
+            try { Capture(); Ended?.Invoke(null); return; }
+            catch (Exception e)
+            {
+                Log.Debug($"tap: failed {e.GetType().Name} 0x{e.HResult:X8}");
+                if (!running) { Ended?.Invoke(null); return; }
+                failures = DateTime.UtcNow - started > TimeSpan.FromSeconds(10) ? 1 : failures + 1;
+                if (failures > 5) { Ended?.Invoke(e.Message); return; }
+                Thread.Sleep(300 * failures);
+                if (!running) { Ended?.Invoke(null); return; }
+                Log.Debug("tap: opening the capture again");
+            }
         }
     }
 
@@ -94,8 +106,12 @@ sealed class SystemAudioTap : IAudioSource
                 // How long packets stall here (a VM): a stall over LoopbackGap.Late puts a gap in a sentence.
                 var waited = (DateTime.UtcNow - lastPacket).TotalMilliseconds;
                 if (waited >= 300 && fedUntil == lastPacket) Log.Debug($"tap: packets late by {waited:F0} ms");
-                while (capture.GetNextPacketSize(out var packet) == 0 && packet > 0)
+                // A failing call (the device invalidated, the audio service gone) must throw: ending the
+                // loop quietly would feed silence for the rest of the meeting.
+                while (true)
                 {
+                    Marshal.ThrowExceptionForHR(capture.GetNextPacketSize(out var packet));
+                    if (packet == 0) break;
                     Marshal.ThrowExceptionForHR(capture.GetBuffer(out var data, out var frames, out var flags, out _, out _));
                     if ((flags & BufferDiscontinuity) != 0 && ++gaps % 50 == 1) Log.Debug($"tap: audio glitch ({gaps} so far)");
                     int count = (int)frames * channels;
