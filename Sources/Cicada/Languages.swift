@@ -78,6 +78,20 @@ func likelySourceLanguages(last: String?, systemLanguages prefs: [String]) -> [L
     return out
 }
 
+/// The model auto starts with: the room's own language, else the last meeting's, else the
+/// Mac's language before the remaining installed models. `candidates` is in `sourceLanguages`
+/// order (English first), so taking `candidates.first` would start every fresh Mac in English.
+func initialSourceLanguage(candidates: [Lang], last: String?, systemLanguages prefs: [String],
+                           mine: Lang? = nil) -> Lang {
+    if let mine { return mine }
+    if let last, let lang = candidates.first(where: { $0.locale == last }) { return lang }
+    let likely = likelySourceLanguages(last: last, systemLanguages: prefs)
+    return likely.first(where: { candidates.contains($0) })
+        ?? likely.first
+        ?? candidates.first
+        ?? sourceLanguages[0]
+}
+
 /// The speech locale to listen for when I speak my language (English when it isn't one we recognize).
 func speakLocale(forLanguage code: String) -> String {
     if code.hasPrefix("zh") { return "zh-CN" }

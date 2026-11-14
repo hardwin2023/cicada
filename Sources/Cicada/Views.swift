@@ -1020,8 +1020,12 @@ struct MainWindowView: View {
                 Button("显示原文件") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
             }
             Button("在 Finder 中显示") { NSWorkspace.shared.activateFileViewerSelecting([store.folder(s.id)]) }
-            if s.sourcePath != nil, !working(s) {
-                Button("重新转写") { importer.retry(s.id) }
+            if s.hasAudio, !live, !working(s) {
+                Menu("重新转写") {
+                    ForEach(sourceLanguages, id: \.locale) { lang in
+                        Button(lang.name) { importer.retry(s.id, lang: lang) }
+                    }
+                }
             }
             if s.renamed ?? !s.title.hasPrefix("会议 "), s.notes?.title != nil {
                 Button("恢复自动标题") { store.rename(s.id, to: "") }
@@ -1197,6 +1201,11 @@ struct MainWindowView: View {
                 .buttonStyle(.plain)
                 .help(showQuotes ? L("收起原话") : L("在纪要旁显示原话"))
             }
+            // Edit the notes, names and terms by hand: here only, not in the notes panel (it never
+            // takes focus), and not while the meeting is being written (the next pass would redo it).
+            if active == "notes", s.id != store.liveID, importer.status(of: s) == nil, let notes = s.notes, !notes.isEmpty {
+                NotesEditButton(model: model, session: s)
+            }
             // Not while the meeting is still going, nor before an import has its text.
             Button { sharing = s } label: {
                 Text("分享…").font(.system(size: 13)).foregroundStyle(Palette.secondary)
@@ -1204,6 +1213,17 @@ struct MainWindowView: View {
             .buttonStyle(.plain)
             .disabled((s.lines.isEmpty && (s.notes?.isEmpty ?? true)) || store.liveID == s.id || importer.status(of: s) != nil)
             .sheet(item: $sharing) { shared in ShareSheet(session: shared) { sharing = nil } }
+            if s.hasAudio, store.liveID != s.id, importer.status(of: s) == nil {
+                Menu {
+                    ForEach(sourceLanguages, id: \.locale) { lang in
+                        Button(lang.name) { importer.retry(s.id, lang: lang) }
+                    }
+                } label: {
+                    Text("重新转写").font(.system(size: 13)).foregroundStyle(Palette.secondary)
+                }
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                .help(L("用保存的录音重新识别，替换现在的文字记录和纪要；旧记录会先备份"))
+            }
             Menu {
                 Button("复制为 Markdown") { model.export(s, kind: "copy") }
                 Divider()
@@ -1319,11 +1339,11 @@ struct MainWindowView: View {
                             .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Palette.secondary)
                     }
                     .padding(.bottom, 8)
-                    let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s.lines) : [:]
+                    let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s) : [:]
                     let starts = SpeakerLabels.runStarts(s.lines, speakers)
                     ForEach(s.lines) { l in
                         quoteRow(l, speaker: speakers[l.id], picked: quoteJump.map { t in l.id == pickedLine(s, t)?.id } ?? false,
-                                 label: starts.contains(l.id), voices: !speakers.isEmpty).id(l.id)
+                                 label: settings.speakerEveryLine || starts.contains(l.id), voices: !speakers.isEmpty).id(l.id)
                     }
                 }
                 .environment(\.speakerNames, SpeakerLabels.names(s))
@@ -1384,12 +1404,12 @@ struct MainWindowView: View {
                     .id(PinnedHeader.top)
                     .pinnedHeader($pinned)
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s.lines) : [:]
-                    if !speakers.isEmpty { SpeakerStrip(model: model, session: s).padding(.bottom, 8) }
+                    let speakers = settings.speakerVoices ? SpeakerLabels.numbers(s) : [:]
+                    if !speakers.isEmpty || (settings.speakerVoices && SpeakerLabels.singleVoice(s.lines) != nil) { SpeakerStrip(model: model, session: s).padding(.bottom, 8) }
                     let both = RecordList.heardBoth(s.lines)
                     // In a meeting that heard the room and the Mac, a change of place starts a new run too.
                     let starts = SpeakerLabels.runStarts(s.lines, speakers).union(both ? RecordList.placeStarts(s.lines) : [])
-                    let voices = SpeakerLabels.voiceNumbers(s.lines)
+                    let voices = SpeakerLabels.voiceNumbers(s)
                     let playingLine = player.lineID(in: s)
                     if s.id != store.liveID {
                         FixReviewBanner(fixes: model.fixes, session: s, onShow: { id in withAnimation { proxy.scrollTo(id, anchor: .center) } },
@@ -1397,7 +1417,7 @@ struct MainWindowView: View {
                             .padding(.bottom, 10)
                     }
                     ForEach(s.lines) { l in
-                        lineRow(l, speaker: speakers[l.id], label: speakers.isEmpty || starts.contains(l.id), voices: !speakers.isEmpty, place: both, in: s,
+                        lineRow(l, speaker: speakers[l.id], label: speakers.isEmpty || settings.speakerEveryLine || starts.contains(l.id), voices: !speakers.isEmpty, place: both, in: s,
                                 current: l.id == playingLine)
                             .contextMenu {
                                 Button(L("改这句…")) { editingStart = l.shown; editingLine = l.id }
@@ -1491,13 +1511,39 @@ struct MainWindowView: View {
                 HStack(spacing: 6) {
                     if !label {
                     } else if voices, !me, let s = shownSession {
-                        // A click on whose line it is: say it was someone else's.
-                        Menu { assignMenu(s, l, SpeakerLabels.voiceNumbers(s.lines)) } label: {
+                        // A click on whose line it is: say it was someone else's, or name the voice.
+                        Menu {
+                            if let v = l.voice {
+                                Button(L("标记人名…")) { model.promptSpeakerName(session: s.id, voice: v) }
+                                if model.settings.speakerMemory, s.id != model.store.liveID {
+                                    Button(L("记住这个声音…")) { model.rememberSpeaker(session: s.id, voice: v) }
+                                }
+                                Divider()
+                            }
+                            assignMenu(s, l, SpeakerLabels.voiceNumbers(s))
+                        } label: {
                             if let speaker { SpeakerTag(number: speaker) } else { UnknownSpeakerTag() }
                         }
                         .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
                         .help(L("这句是谁说的"))
                     } else if let speaker { SpeakerTag(number: speaker) }
+                    else if let s = shownSession, let v = l.voice {
+                        // A one-to-one call (or a voice not on show yet): make 对方 clickable to name.
+                        Menu {
+                            Button(L("标记人名…")) { model.promptSpeakerName(session: s.id, voice: v) }
+                            if model.settings.speakerMemory, s.id != model.store.liveID {
+                                Button(L("记住这个声音…")) { model.rememberSpeaker(session: s.id, voice: v) }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text("对方").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.secondary)
+                                Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold)).foregroundStyle(Palette.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .help(L("标记这个人叫什么"))
+                    }
                     else if shownSession?.sourceFile == nil {
                         // An imported file has no "other side": its lines carry no label.
                         if me { MeTag() } else {

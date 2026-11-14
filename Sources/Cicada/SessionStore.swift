@@ -43,6 +43,11 @@ struct Session: Codable, Identifiable, Equatable {
     var voiceNames: [String: String]? = nil
     /// Names Ling read from the conversation, keyed by voice id; shown until the user says otherwise.
     var voiceGuesses: [String: VoiceGuess]? = nil
+    /// A voice this meeting matched to the local voiceprint library, keyed by voice id. The name
+    /// is a snapshot: deleting the profile later must not make an old record unreadable.
+    var voiceProfiles: [String: VoiceProfileRef]? = nil
+    /// Similar matches waiting for the user to say yes. Suggestions are never shown as the name.
+    var voiceSuggestions: [String: VoiceProfileRef]? = nil
     /// An imported recording or video: its file name, where it was (played from there; never
     /// copied or deleted), and true until transcribing it finished.
     var sourceFile: String? = nil
@@ -270,13 +275,16 @@ final class SessionStore: ObservableObject {
         let voices: [String: Int?]
         let names: [String: String]?
         let guesses: [String: VoiceGuess]?
+        let profiles: [String: VoiceProfileRef]?
+        let suggestions: [String: VoiceProfileRef]?
     }
 
     func voiceSnapshot(_ id: String) -> VoiceSnapshot? {
         guard let s = session(id) else { return nil }
         var voices: [String: Int?] = [:]
         for l in s.lines { voices[l.id] = .some(l.voice) }
-        return VoiceSnapshot(voices: voices, names: s.voiceNames, guesses: s.voiceGuesses)
+        return VoiceSnapshot(voices: voices, names: s.voiceNames, guesses: s.voiceGuesses,
+                             profiles: s.voiceProfiles, suggestions: s.voiceSuggestions)
     }
 
     func restore(_ id: String, _ snap: VoiceSnapshot) {
@@ -287,6 +295,8 @@ final class SessionStore: ObservableObject {
         }
         sessions[i].voiceNames = snap.names
         sessions[i].voiceGuesses = snap.guesses
+        sessions[i].voiceProfiles = snap.profiles
+        sessions[i].voiceSuggestions = snap.suggestions
         saveNow(id)
     }
 
@@ -296,6 +306,28 @@ final class SessionStore: ObservableObject {
         var names = sessions[i].voiceNames ?? [:]
         names[String(voice)] = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         sessions[i].voiceNames = names.isEmpty ? nil : names
+        saveNow(id)
+    }
+
+    /// A voice was recognised by the local voiceprint library. The suggestion, if any, is spent.
+    func setVoiceProfile(_ id: String, voice: Int, ref: VoiceProfileRef?) {
+        guard let i = index(id) else { return }
+        var profiles = sessions[i].voiceProfiles ?? [:]
+        profiles[String(voice)] = ref
+        sessions[i].voiceProfiles = profiles.isEmpty ? nil : profiles
+        if var suggestions = sessions[i].voiceSuggestions {
+            suggestions[String(voice)] = nil
+            sessions[i].voiceSuggestions = suggestions.isEmpty ? nil : suggestions
+        }
+        saveNow(id)
+    }
+
+    /// A close voiceprint match waiting for the user. Never used as the displayed name by itself.
+    func setVoiceSuggestion(_ id: String, voice: Int, _ ref: VoiceProfileRef?) {
+        guard let i = index(id) else { return }
+        var suggestions = sessions[i].voiceSuggestions ?? [:]
+        suggestions[String(voice)] = ref
+        sessions[i].voiceSuggestions = suggestions.isEmpty ? nil : suggestions
         saveNow(id)
     }
 
@@ -323,6 +355,14 @@ final class SessionStore: ObservableObject {
         if var guesses = sessions[i].voiceGuesses, let moved = guesses.removeValue(forKey: String(from)) {
             if guesses[String(into)] == nil { guesses[String(into)] = moved }
             sessions[i].voiceGuesses = guesses.isEmpty ? nil : guesses
+        }
+        if var profiles = sessions[i].voiceProfiles, let moved = profiles.removeValue(forKey: String(from)) {
+            if profiles[String(into)] == nil { profiles[String(into)] = moved }
+            sessions[i].voiceProfiles = profiles.isEmpty ? nil : profiles
+        }
+        if var suggestions = sessions[i].voiceSuggestions {
+            suggestions[String(from)] = nil
+            sessions[i].voiceSuggestions = suggestions.isEmpty ? nil : suggestions
         }
         saveNow(id)
     }
@@ -359,8 +399,31 @@ final class SessionStore: ObservableObject {
         // Voices are numbered afresh: names given to the old ones would land on other people.
         sessions[i].voiceNames = nil
         sessions[i].voiceGuesses = nil
+        sessions[i].voiceProfiles = nil
+        sessions[i].voiceSuggestions = nil
         sessions[i].importing = true
         saveNow(id)
+    }
+
+    /// Keep the old transcript and notes beside the recording, before a re-transcribe replaces
+    /// them. Returns the backup's URL, or nil when there is nothing to keep.
+    @discardableResult
+    func backupTranscript(_ id: String) -> URL? {
+        guard let i = index(id), !sessions[i].lines.isEmpty || sessions[i].notes != nil else { return nil }
+        saveNow(id)
+        let dir = folder(id)
+        let src = dir.appendingPathComponent("session.json")
+        guard FileManager.default.fileExists(atPath: src.path) else { return nil }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+        let dst = dir.appendingPathComponent("session.before-retranscribe-\(stamp).json")
+        do {
+            try FileManager.default.copyItem(at: src, to: dst)
+            return dst
+        } catch {
+            debugLog("backup transcript failed: \(error)")
+            return nil
+        }
     }
 
     func append(_ line: TranscriptLine, to id: String) {
@@ -470,7 +533,7 @@ enum TranscriptExport {
         return numbers.isEmpty ? L("对方") : L("未识别")
     }
 
-    static func speakerNumbers(_ s: Session) -> [String: Int] { voices ? SpeakerLabels.numbers(s.lines) : [:] }
+    static func speakerNumbers(_ s: Session) -> [String: Int] { voices ? SpeakerLabels.numbers(s) : [:] }
 
     /// Whether lines say who spoke. An imported file has no "other side" to call 对方: its lines
     /// are named only once its voices are told apart.

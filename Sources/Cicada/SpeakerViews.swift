@@ -79,7 +79,12 @@ struct SpeakerStrip: View {
     @State private var popover: Int?
 
     var body: some View {
-        let numbers = SpeakerLabels.voiceNumbers(session.lines)
+        let numbered = SpeakerLabels.voiceNumbers(session)
+        // A one-to-one call has one voice, which `voiceNumbers` hides; show it anyway so it can be
+        // named and remembered for the next meeting.
+        let numbers = numbered.isEmpty
+            ? SpeakerLabels.singleVoice(session.lines).map { [$0: 1] } ?? [:]
+            : numbered
         let names = SpeakerLabels.names(session)
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
@@ -143,10 +148,13 @@ struct SpeakerEditor: View {
 
     var body: some View {
         // Gone once merged into someone else: the editor closes on the next turn.
-        if let s = session, let n = SpeakerLabels.voiceNumbers(s.lines)[voice] {
-            let numbers = SpeakerLabels.voiceNumbers(s.lines)
+        if let s = session,
+           let n = SpeakerLabels.voiceNumbers(s)[voice]
+            ?? (SpeakerLabels.singleVoice(s.lines) == voice ? 1 : nil) {
+            let numbers = SpeakerLabels.voiceNumbers(s)
             let names = SpeakerLabels.names(s)
             let guess = SpeakerLabels.guessed(s)[n]
+            let suggestion = model.speakerSuggestion(session: s.id, voice: voice)
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 6) {
                     Circle().fill(SpeakerColor.ink(n)).frame(width: 8, height: 8)
@@ -200,6 +208,68 @@ struct SpeakerEditor: View {
                         }
                     } else if namer.busy.contains(s.id) {
                         Text("Ling 正在从对话里找名字…").font(.system(size: 11)).foregroundStyle(Palette.tertiary)
+                    }
+                }
+                if let suggestion {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "person.crop.circle.badge.checkmark")
+                            .font(.system(size: 13)).foregroundStyle(Palette.accentInk)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L("声纹库：可能是 \(suggestion.name)（\(Int((suggestion.similarity * 100).rounded()))%）"))
+                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
+                            Text(L("声音像，但还不够确定。确认后，下次会议会直接认出。"))
+                                .font(.system(size: 10)).foregroundStyle(Palette.tertiary)
+                        }
+                        Spacer(minLength: 6)
+                        Button(L("是 TA")) {
+                            model.acceptSpeakerSuggestion(session: s.id, voice: voice)
+                            close()
+                        }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.accentInk)
+                        Button(L("不是")) {
+                            model.dismissSpeakerSuggestion(session: s.id, voice: voice)
+                        }
+                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Palette.accentPale.opacity(0.55)))
+                } else if let known = s.voiceProfiles?[String(voice)] {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "person.crop.circle.badge.checkmark")
+                            .font(.system(size: 13)).foregroundStyle(Palette.accentInk)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L("声纹库：\(known.name)"))
+                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
+                            Text(L("这次会议按这个声纹标的。认错了可以只断开本次，不会删掉声纹。"))
+                                .font(.system(size: 10)).foregroundStyle(Palette.tertiary)
+                        }
+                        Spacer(minLength: 6)
+                        Button(L("更新声纹")) {
+                            model.rememberSpeaker(session: s.id, voice: voice, name: known.name)
+                        }
+                        .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Palette.secondary)
+                        Button(L("不是 TA")) {
+                            model.forgetSpeaker(session: s.id, voice: voice)
+                        }
+                        .buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.accentInk)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        Button {
+                            model.rememberSpeaker(session: s.id, voice: voice, name: draft.isEmpty ? nil : draft)
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "person.badge.plus").font(.system(size: 10))
+                                Text(model.speakerMemoryBusy ? L("正在记住…") : L("记住这个声音"))
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundStyle(Palette.accentInk).padding(.horizontal, 9).frame(height: 26)
+                            .background(RoundedRectangle(cornerRadius: 7).fill(Palette.accentPale))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.speakerMemoryBusy)
+                        .help(L("需要 3 句以上发言；声纹只保存在这台 Mac"))
+                        Text(L("下次会议自动认出")).font(.system(size: 10)).foregroundStyle(Palette.tertiary)
                     }
                 }
                 let others = numbers.filter { $0.key != voice }.sorted { $0.value < $1.value }
@@ -337,7 +407,7 @@ struct SpeakerPreview: View {
     @ObservedObject var model: AppModel
     let session: Session
     var body: some View {
-        let numbers = SpeakerLabels.numbers(session.lines)
+        let numbers = SpeakerLabels.numbers(session)
         let starts = SpeakerLabels.runStarts(session.lines, numbers)
         VStack(alignment: .leading, spacing: 10) {
             if !numbers.isEmpty { SpeakerStrip(model: model, session: session) }

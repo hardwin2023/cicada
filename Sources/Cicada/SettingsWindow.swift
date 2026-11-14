@@ -731,9 +731,25 @@ struct SettingsView: View {
                     Toggle("保存会议录音", isOn: $settings.recordAudio)
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
                 }
+                SettingsRow(title: L("开始听时打开麦克风"), detail: L("关掉后只听电脑声音；开会时再手动打开")) {
+                    Toggle("开始听时打开麦克风", isOn: $settings.autoMicOnStart)
+                        .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
+                }
                 SettingsRow(title: L("说话人识别"), detail: L("按声音标出说话人 1、2…，只在这台 Mac 上处理")) {
                     Toggle("说话人识别", isOn: $settings.speakerVoices)
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
+                }
+                SettingsRow(title: L("每句都显示说话人"), detail: L("连续同一个人说话时也重复标出，不再只在换人时标")) {
+                    Toggle("每句都显示说话人", isOn: $settings.speakerEveryLine)
+                        .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
+                        .disabled(!settings.speakerVoices)
+                }
+                SettingsRow(title: L("记住说话人"), detail: L("按本机声纹认出以前见过的人；不会上传声音")) {
+                    Toggle("记住说话人", isOn: $settings.speakerMemory)
+                        .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
+                }
+                SettingsRow(title: L("人员库"), detail: L("\(model.speakerProfiles.count) 个人 · 声纹和备注")) {
+                    SoftButton(L("管理")) { model.speakerLibraryShown = true }
                 }
                 SettingsRow(title: L("记录文件夹"), divider: false) {
                     SoftButton(L("打开")) { NSWorkspace.shared.open(model.store.root) }
@@ -775,6 +791,9 @@ struct SettingsView: View {
                 }
             }
             AppRows(updates: model.updates, loginItem: model.loginItem, model: model)
+        }
+        .sheet(isPresented: $model.speakerLibraryShown) {
+            SpeakerLibraryView(model: model)
         }
     }
 }

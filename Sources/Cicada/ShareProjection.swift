@@ -53,7 +53,7 @@ enum ShareScope: String, CaseIterable {
 enum ShareProjection {
     /// `removed`: indices into the record's lines the user took out; `dropNotes` leaves the notes out.
     static func doc(_ s: Session, scope: ShareScope, names: Bool, removed: Set<Int> = [], dropNotes: Bool = false) -> ShareDoc {
-        let numbers = SpeakerLabels.numbers(s.lines)
+        let numbers = SpeakerLabels.numbers(s)
         let nameMap = names ? SpeakerLabels.names(s) : [:]
         func who(_ l: TranscriptLine) -> String {
             if l.speaker == "me" { return L("分享者") }

@@ -229,6 +229,18 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
+    /// Repeat the speaker tag on every line instead of only when the speaker changes. Off by
+    /// default: a quiet meeting reads better as runs, but a record used as evidence wants it.
+    @Published var speakerEveryLine: Bool {
+        didSet { save() }
+    }
+
+    /// Recognise people saved in the local voiceprint library. Enrolling a voice is always an
+    /// explicit action with its own consent alert; this switch only controls automatic naming.
+    @Published var speakerMemory: Bool {
+        didSet { save() }
+    }
+
     /// 会中改正听错的词: finished sentences carry the word list to the AI service, which points out
     /// misheard words (`Correction`). On by default; does nothing without an AI service.
     @Published var fixMisheard: Bool {
@@ -244,6 +256,12 @@ final class AppSettings: ObservableObject {
     /// 听哪里: "system" (what the Mac plays), "room" (a real microphone, for a meeting in the room) or
     /// "both" (电脑和会议室: people online and in the room, each heard on its own).
     @Published var listenSource: String {
+        didSet { save() }
+    }
+    /// 开始听时打开麦克风: a user-started meeting, or a meeting app's call, also opens the room
+    /// microphone, once per meeting. Off by default: an open mic pauses 不用按键 and hears the
+    /// speakers. Launch never opens the microphone by itself.
+    @Published var autoMicOnStart: Bool {
         didSet { save() }
     }
     /// The microphone chosen beside 打开麦克风, by UID; empty is 自动. Never the system default's.
@@ -312,6 +330,7 @@ final class AppSettings: ObservableObject {
         silenceEnd = defaults.string(forKey: "silenceEnd") ?? "prompt"
         silenceMinutes = defaults.object(forKey: "silenceMinutes") as? Double ?? 10
         listenSource = ["room", "both"].contains(defaults.string(forKey: "listenSource")) ? defaults.string(forKey: "listenSource")! : "system"
+        autoMicOnStart = defaults.bool(forKey: "autoMicOnStart")
         roomMicUID = defaults.string(forKey: "roomMicUID") ?? ""
         diagnostics = defaults.object(forKey: "diagnostics") as? Bool ?? DevBuild.isDev
         notesCapturable = defaults.bool(forKey: "notesCapturable")
@@ -326,6 +345,8 @@ final class AppSettings: ObservableObject {
             defaults.set(true, forKey: "speakerVoices")
             defaults.set(true, forKey: "speakerVoicesRegular")
         }
+        speakerMemory = defaults.object(forKey: "speakerMemory") as? Bool ?? true
+        speakerEveryLine = defaults.object(forKey: "speakerEveryLine") as? Bool ?? false
     }
 
     private func save() {
@@ -374,10 +395,13 @@ final class AppSettings: ObservableObject {
         defaults.set(silenceEnd, forKey: "silenceEnd")
         defaults.set(silenceMinutes, forKey: "silenceMinutes")
         defaults.set(listenSource, forKey: "listenSource")
+        defaults.set(autoMicOnStart, forKey: "autoMicOnStart")
         defaults.set(roomMicUID, forKey: "roomMicUID")
         defaults.set(diagnostics, forKey: "diagnostics")
         defaults.set(notesCapturable, forKey: "notesCapturable")
         defaults.set(speakerVoices, forKey: "speakerVoices")
+        defaults.set(speakerEveryLine, forKey: "speakerEveryLine")
+        defaults.set(speakerMemory, forKey: "speakerMemory")
         defaults.set(fixMisheard, forKey: "fixMisheard")
         defaults.set(askNames, forKey: "askNames")
     }
