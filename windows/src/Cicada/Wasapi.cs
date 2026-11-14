@@ -266,6 +266,8 @@ sealed class DeviceRecorder
     Thread? thread;
     volatile bool running;
     public string? Error { get; private set; }
+    /// The last packet's peak, 0–1 (scaled as the Mac's recorder meter): for a level bar.
+    public volatile float Level;
 
     public DeviceRecorder(string id) { this.id = id; }
 
@@ -310,6 +312,9 @@ sealed class DeviceRecorder
                     var buf = new short[frames];
                     if ((flags & 0x2) == 0) Marshal.Copy(data, buf, 0, (int)frames);
                     cap.ReleaseBuffer(frames);
+                    int peak = 0;
+                    foreach (var v in buf) peak = Math.Max(peak, Math.Abs((int)v));
+                    Level = Math.Min(1f, peak / 32768f * 2.5f);
                     lock (samples) samples.AddRange(buf);
                 }
             }

@@ -6,7 +6,9 @@
 //       for the final notes and prints them. --room <mic.wav> hears that file as the room mic too
 //       (电脑和会议室: two engines, the echo gate and EchoMatch); --room-only hears it alone (会议室).
 //   cicada-cli check                     the AI service's key check: state, hears, catalog sizes
-//   cicada-cli speak <text> <out.wav>    the service's voice for <text>, as a 24 kHz WAV
+//   cicada-cli speak <text> <out.wav>    the service's voice for <text>, as a 24 kHz WAV; --voice <id>,
+//       --lang <code> (Ming's language_id), --clone <reference.wav> [--clone-text <what it says>]
+//       [--from <my language>] for the user's own voice (Ling only)
 //   cicada-cli segments <file.wav>       where the segmenter cuts (compare with ming_asr.py)
 //   cicada-cli roundtrip <session.json>…  reads and writes records, says if anything changed
 //
@@ -73,8 +75,29 @@ switch (args_[0])
     {
         var ling = Client();
         var pcm = new List<byte>();
+        // --clone <reference.wav>: the user's own voice, as 我自己的声音 does. The clip is checked
+        // as the app checks a recording (length, heard by the hear model, pace) unless --clone-text
+        // gives what it says.
+        (string Audio, string Text)? reference = null;
+        if (Opt("--clone", "") is { Length: > 0 } refFile)
+        {
+            var refWav = Wav.Bytes(Wav.Read(refFile));
+            var text = Opt("--clone-text", "");
+            if (text.Length == 0)
+            {
+                var me = Opt("--from", "zh-CN");
+                var (outcome, heard) = await VoiceCloneCheck.Check(refWav,
+                    async w => (await new Translator(ling).Hear(w, SpeakEngine.TargetFor("room", "en", me), me, Priority.Speak))?.Original);
+                Console.WriteLine($"reference: {(refWav.Length - 44) / 32000.0:F1} s, {outcome}, heard «{heard}»");
+                if (outcome != VoiceCloneCheck.Outcome.Ready) return 1;
+                text = heard;
+            }
+            reference = ("data:audio/wav;base64," + Convert.ToBase64String(refWav), text);
+        }
+        var lang = Opt("--lang", "");
         var started = DateTime.UtcNow;
-        await foreach (var chunk in ling.Speech(args_[1], Opt("--voice", "") is { Length: > 0 } v ? v : null)) pcm.AddRange(chunk);
+        await foreach (var chunk in ling.Speech(args_[1], Opt("--voice", "") is { Length: > 0 } v ? v : null,
+                           lang.Length > 0 ? VoiceCatalog.MingLanguage(lang) : null, reference)) pcm.AddRange(chunk);
         var samples = new short[pcm.Count / 2];
         Buffer.BlockCopy(pcm.ToArray(), 0, samples, 0, samples.Length * 2);
         File.WriteAllBytes(args_[2], Wav.Bytes(samples, 24000));

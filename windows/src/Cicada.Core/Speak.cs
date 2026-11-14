@@ -52,8 +52,13 @@ public static class VoiceCatalog
         _ => [],
     };
 
-    public static IReadOnlyList<VoiceOption> Options(string language, AIConfig config, bool windowsHasIt = true) =>
-        windowsHasIt ? [.. Cloud(language, config), new(SystemId, "Windows", "本机")] : Cloud(language, config);
+    /// The user's own voice (Voices.swift › cloneOption), offered with every language once recorded.
+    public const string CloneId = "clone";
+    public static readonly VoiceOption Clone = new(CloneId, "我自己的声音", "你的音色");
+
+    /// `clone`: the user's recording exists and the service clones (Ling, with a working key).
+    public static IReadOnlyList<VoiceOption> Options(string language, AIConfig config, bool windowsHasIt = true, bool clone = false) =>
+        [.. Cloud(language, config), .. windowsHasIt ? [new VoiceOption(SystemId, "Windows", "本机")] : Array.Empty<VoiceOption>(), .. clone ? [Clone] : Array.Empty<VoiceOption>()];
 
     /// What a language uses until the user picks: the service's first voice once it can speak (or
     /// when Windows has none for the language), else Windows'.
@@ -62,9 +67,11 @@ public static class VoiceCatalog
 
     /// The voice chosen for a language, if it is still offered: a Ming voice saved before switching
     /// to ZenMux is not sent there, and "system" saved where Windows has no voice for the language
-    /// (Chinese Windows often has only Chinese ones) left the voice blank and 试听 silent (#22).
-    public static string Chosen(AppSettings settings, string language, AIConfig config, bool speaks, bool windowsHasIt = true) =>
-        settings.SpeakVoices.TryGetValue(Key(language), out var id) && Options(language, config, windowsHasIt).Any(v => v.Id == id) ? id : DefaultId(language, config, speaks, windowsHasIt);
+    /// (Chinese Windows often has only Chinese ones) left the voice blank and 试听 silent (#22). The
+    /// user's own voice without its recording or without Ling falls back the same way, and comes
+    /// back with them (AppModel.voiceID).
+    public static string Chosen(AppSettings settings, string language, AIConfig config, bool speaks, bool windowsHasIt = true, bool clone = false) =>
+        settings.SpeakVoices.TryGetValue(Key(language), out var id) && Options(language, config, windowsHasIt, clone).Any(v => v.Id == id) ? id : DefaultId(language, config, speaks, windowsHasIt);
 
     /// A short line to try a voice with, in the language it will speak.
     public static string Sample(string language) => Key(language) switch
@@ -243,26 +250,39 @@ public sealed class SpeakEngine
         store.Append(m.id, line);
     }
 
-    /// The service's voice (Ming's on Ling), else Windows'. True once some sound went out.
+    /// The user's recording for their own voice; null in tests that don't need it.
+    public VoiceReference? Reference { get; set; }
+
+    /// Whether the user's own voice can be used now: recorded, and Ling with a working key.
+    public bool CloneReady => ling.Clones && Reference?.Exists == true;
+
+    /// The voice a language uses now (the choice, or its fallback).
+    public string ChosenVoice(string language) =>
+        VoiceCatalog.Chosen(settings, language, ling.Config, ling.Speaks, systemVoice.Has(language), CloneReady);
+
+    /// The service's voice (Ming's on Ling, or the user's own cloned from their recording), else
+    /// Windows'. True once some sound went out.
     public async Task<bool> Voice(string text, string language, ISpeechSink sink)
     {
         var config = ling.Config;
-        var id = VoiceCatalog.Chosen(settings, language, config, ling.Speaks, systemVoice.Has(language));
+        var id = ChosenVoice(language);
         var prefix = config.IsLing ? VoiceCatalog.MingPrefix : VoiceCatalog.CloudPrefix;
-        if (id.StartsWith(prefix) && ling.Speaks)
+        var reference = id == VoiceCatalog.CloneId ? Reference?.Reference() : null;
+        if ((id.StartsWith(prefix) || reference is not null) && ling.Speaks)
         {
             int chunks = 0;
             try
             {
-                await foreach (var pcm in ling.Speech(text, id[prefix.Length..], config.IsLing ? VoiceCatalog.MingLanguage(language) : null))
+                var voice = reference is null ? id[prefix.Length..] : null;
+                await foreach (var pcm in ling.Speech(text, voice, config.IsLing ? VoiceCatalog.MingLanguage(language) : null, reference))
                 {
                     if (chunks++ == 0) sink.Begin(24000);
                     sink.Write(pcm);
                 }
             }
-            catch (LingException e) { Log.Debug($"speak: {config.Provider.Id} voice failed {e.Message}"); }
+            catch (LingException e) { Log.Debug($"speak: {config.Provider.Id} {(reference is null ? "voice" : "cloned voice")} failed {e.Message}"); }
             ling.VoiceSpoke(chunks > 0);
-            if (chunks > 0) { await sink.End(); LastVoice = config.IsLing ? "ming" : "cloud"; return true; }
+            if (chunks > 0) { await sink.End(); LastVoice = reference is not null ? "clone" : config.IsLing ? "ming" : "cloud"; return true; }
         }
         var own = await systemVoice.Speak(text, language);
         if (own is not { } v || v.pcm.Length == 0) { LastVoice = null; return false; }

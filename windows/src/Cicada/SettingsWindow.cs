@@ -50,7 +50,8 @@ sealed partial class SettingsWindow : Window
         Content = Ui.Frameless(this, grid);
         scroll.ScrollChanged += (_, e) => { if (e.ViewportWidthChange != 0 && scroll.Content is FrameworkElement p) p.Width = PageWidth(); };
         app.Ling.Changed += OnLingChanged;
-        Closed += (_, _) => app.Ling.Changed -= OnLingChanged;
+        app.OwnVoice.Changed += OnLingChanged;
+        Closed += (_, _) => { app.Ling.Changed -= OnLingChanged; app.OwnVoice.Changed -= OnLingChanged; };
         // While a talk key is being chosen no key reaches any app: leaving the window ends it.
         Deactivated += (_, _) => StopChoosingKey();
         Closed += (_, _) => { if (choosingKey) app.StopChoosingTalkKey(); };
@@ -268,9 +269,9 @@ sealed partial class SettingsWindow : Window
             : Ui.Button(L("安装"), () => _ = InstallCable(), Ui.Kind.Primary, height: 32);
         var target = app.Speak.Target;
         var config = app.Ling.Config;
-        var voices = VoiceCatalog.Options(target, config, app.WindowsVoice.Has(target))
-            .Select(v => (v.Id, v.Id == VoiceCatalog.SystemId ? L("Windows 自带") : v.Tags.Length == 0 ? v.Name : $"{v.Name} · {string.Join(" · ", v.Tags.Split(" · ").Select(L))}")).ToList();
-        var chosen = VoiceCatalog.Chosen(s, target, config, app.Ling.Speaks, app.WindowsVoice.Has(target));
+        var voices = VoiceCatalog.Options(target, config, app.WindowsVoice.Has(target), app.Speak.CloneReady)
+            .Select(v => (v.Id, v.Id == VoiceCatalog.SystemId ? L("Windows 自带") : v.Id == VoiceCatalog.CloneId ? L(v.Name) : v.Tags.Length == 0 ? v.Name : $"{v.Name} · {string.Join(" · ", v.Tags.Split(" · ").Select(L))}")).ToList();
+        var chosen = app.Speak.ChosenVoice(target);
         var voice = Ui.Row(8,
             Ui.Choice(voices, chosen, v => { s.SpeakVoices[VoiceCatalog.Key(target)] = v; previewNote = null; Save(); Render(); }, 280),
             Ui.Button(app.Previewing ? L("停止") : L("试听"), () => { if (app.Previewing) app.StopPreview(); else _ = RunPreview(); }, height: 32));
@@ -290,7 +291,8 @@ sealed partial class SettingsWindow : Window
             Card(null, L("线上的人听到的语言"), s.SpeakTo == "room" ? LF("现在是 %@", Ui.TargetName(target)) : null,
                 Ui.Choice([("room", L("对方说的语言")), .. Languages.Targets.Select(t => (t.Code, t.Name))], s.SpeakTo, v => { s.SpeakTo = v; Save(); Render(); })),
             note is null ? Card(null, LF("线上的人听到的声音（%@）", Ui.TargetName(target)), null, voice)
-                : Ui.Stack(0, Card(null, LF("线上的人听到的声音（%@）", Ui.TargetName(target)), null, voice), PreviewNoteBox(note.Value)));
+                : Ui.Stack(0, Card(null, LF("线上的人听到的声音（%@）", Ui.TargetName(target)), null, voice), PreviewNoteBox(note.Value)),
+            OwnVoiceCard(target, chosen == VoiceCatalog.CloneId));
         yield return Label(L("麦克风"));
         var mic = Card(null, L("译文送进会议"), cable ? L("在会议软件里把麦克风选成 CABLE Output") : L("需要装免费的 VB-Cable；装的时候 Windows 会请你确认"), cableControl);
         if (cable && Endpoints.SpeakerIsCable())
@@ -342,6 +344,48 @@ sealed partial class SettingsWindow : Window
         box.Children.Add(t);
         System.Windows.Automation.AutomationProperties.SetName(box, L("按下想用的键…"));
         return box;
+    }
+
+    /// 我自己的声音 (VoicePicker.swift › cloneRow), under the voice: 录制 before there is a recording;
+    /// then its length and how close it will sound, with 重录 and 删除; greyed with 去换成 Ling on a
+    /// service that can't clone. Choosing it is the voice menu's last item.
+    FrameworkElement OwnVoiceCard(string target, bool chosen)
+    {
+        var own = app.OwnVoice;
+        if (!app.Ling.Config.Provider.Clones)
+        {
+            var title = Ui.Text(L("我自己的声音"), 14, Palette.Secondary);
+            return CardWith(title, L("只有 Ling 能用你自己的声音"), Ui.Button(L("去换成 Ling"), () => Show("ai"), height: 32));
+        }
+        if (own.Exists)
+        {
+            var note = own.SavedIsSlow ? L("读得偏慢")
+                : VoiceCatalog.Key(app.Speak.MyLanguage) == VoiceCatalog.Key(target) ? L("最像你") : L("会带你的口音");
+            var buttons = Ui.Row(8,
+                Ui.Button(L("重录"), () => RecordOwnVoice(target), height: 32),
+                Ui.Button(L("删除"), () => { app.RemoveOwnVoice(); Render(); }, height: 32));
+            var title = Ui.Text(L("我自己的声音"), 14, Palette.Ink, chosen ? Palette.Strong : (FontWeight?)null);
+            return CardWith(title, LF("已录 %lld 秒 · %@", (int)Math.Round(own.Duration), note), buttons);
+        }
+        var record = Ui.Button(L("录制"), () => RecordOwnVoice(target), Ui.Kind.Primary, height: 32);
+        record.IsEnabled = app.Ling.Clones;
+        return CardWith(Ui.Text(L("我自己的声音"), 14, Palette.Ink), L("录 15 秒原声，对方听到你的音色，晚约 3 秒"), record);
+    }
+
+    /// A Card whose title is already a TextBlock (greyed or bold).
+    static FrameworkElement CardWith(TextBlock title, string description, FrameworkElement control)
+    {
+        var card = (DockPanel)Card(null, "", description, control);
+        var text = (StackPanel)card.Children[^1];
+        text.Children.RemoveAt(0);
+        text.Children.Insert(0, title);
+        return card;
+    }
+
+    void RecordOwnVoice(string target)
+    {
+        if (VoiceCloneDialog.Open(app, target, null)) previewNote = null;
+        Render();
     }
 
     // 试听's result, shown under the voice until another voice is picked or 试听 is pressed again.

@@ -231,6 +231,8 @@ public sealed class LingClient
     public bool Usable => HasKey && KeyState != KeyState.Invalid;
     /// Voices in the room from this service (else Windows' own voice speaks).
     public bool Speaks => Usable && Config.HasVoices;
+    /// The user's own voice: only Ling clones.
+    public bool Clones => Speaks && Config.Provider.Clones;
     /// Listening and 同声传译 can work: the hear model wasn't found to refuse audio.
     public bool CanHear => Usable && Hears != false && Config.HearModel.Length > 0;
     /// The addresses that refused `chat_template_kwargs` once (a custom service's text and hear
@@ -722,27 +724,17 @@ public sealed class LingClient
     /// es (Ling.swift › speech); elsewhere the configured speech model, and a voice not in the
     /// service's list becomes its first. Replies come three ways and all are read: server-sent
     /// base64 chunks (Ling, ZenMux), raw PCM (OpenRouter), or one JSON `{"audio": <WAV>}`.
+    /// `reference` (Ling only): a voice cloned from the user's recording (a WAV data URI and what it
+    /// says) instead of `voice`; the whole clip goes with every sentence, so it waits longer.
     public async IAsyncEnumerable<byte[]> Speech(string text, string? voice, string? languageId = null,
+        (string Audio, string Text)? reference = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancel = default)
     {
         var k = CurrentKey() ?? throw new LingException(LingException.Kind.NoKey);
         if (KeyState == KeyState.Invalid) throw new LingException(LingException.Kind.InvalidKey);
         var c = Config;
         if (!c.HasVoices) throw new LingException(LingException.Kind.NoKey);
-        var body = new JsonObject { ["model"] = c.VoiceModel, ["input"] = text, ["response_format"] = "pcm" };
-        if (c.IsLing)
-        {
-            body["voice"] = voice ?? "UK_Charlotte";
-            body["sample_rate"] = 24000; body["stream"] = true; body["stream_format"] = "sse";
-            if (languageId is not null) body["language_id"] = languageId;
-        }
-        else
-        {
-            // OpenRouter documents no `stream` (it streams the bytes anyway); ZenMux needs it.
-            if (c.Provider.Id != "openrouter") body["stream"] = true;
-            var ids = c.Voices.Select(v => v.Id).ToList();
-            body["voice"] = voice is not null && ids.Contains(voice) ? voice : ids.FirstOrDefault() ?? c.CustomVoice ?? "Kore";
-        }
+        var body = SpeechBody(c, text, voice, languageId, reference);
         await Acquire(GateFor(c.VoiceBase), Priority.Speak, c.Provider.Spacing, cancel);
         var started = DateTime.UtcNow;
         using var req = new HttpRequestMessage(HttpMethod.Post, new Uri(new Uri(c.VoiceBase!), "audio/speech"))
@@ -751,7 +743,7 @@ public sealed class LingClient
         };
         if (k.Length > 0) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", k);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancel);
-        cts.CancelAfter(TimeSpan.FromSeconds(20));
+        cts.CancelAfter(TimeSpan.FromSeconds(reference is not null && c.IsLing ? 30 : 20));
         HttpResponseMessage res;
         try { res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token); }
         catch (OperationCanceledException) when (!cancel.IsCancellationRequested) { throw new LingException(LingException.Kind.Timeout); }
@@ -821,6 +813,28 @@ public sealed class LingClient
                 }
             }
         }
+    }
+
+    /// The `/audio/speech` request (Ling.swift › speech): Ming's voice, or a clone of `reference`, on
+    /// Ling; elsewhere the configured speech model with one of its voices.
+    public static JsonObject SpeechBody(AIConfig c, string text, string? voice, string? languageId, (string Audio, string Text)? reference = null)
+    {
+        var body = new JsonObject { ["model"] = c.VoiceModel, ["input"] = text, ["response_format"] = "pcm" };
+        if (c.IsLing)
+        {
+            if (reference is { } r) body["references"] = new JsonArray(new JsonObject { ["audio"] = r.Audio, ["text"] = r.Text });
+            else body["voice"] = voice ?? "UK_Charlotte";
+            body["sample_rate"] = 24000; body["stream"] = true; body["stream_format"] = "sse";
+            if (languageId is not null) body["language_id"] = languageId;
+        }
+        else
+        {
+            // OpenRouter documents no `stream` (it streams the bytes anyway); ZenMux needs it.
+            if (c.Provider.Id != "openrouter") body["stream"] = true;
+            var ids = c.Voices.Select(v => v.Id).ToList();
+            body["voice"] = voice is not null && ids.Contains(voice) ? voice : ids.FirstOrDefault() ?? c.CustomVoice ?? "Kore";
+        }
+        return body;
     }
 
     /// The room voice spoke through this service, or failed and Windows spoke instead (现在能用的 says which).

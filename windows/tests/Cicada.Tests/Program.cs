@@ -2891,6 +2891,136 @@ static class Tests
         Equal("ming:US_Emma", VoiceCatalog.Chosen(system, "en", ling, false, windowsHasIt: false), "even before the service is checked");
     }
 
+    // MARK: 我自己的声音
+
+    public static void KeepsTheOwnVoiceRecordingSealed()
+    {
+        var folder = Path.Combine(Paths.Root, "voice-test");
+        var r = new VoiceReference(new FlipProtector(), folder);
+        Check(!r.Exists && r.Reference() is null, "nothing recorded yet");
+        var wav = Wav.Bytes(new short[16000 * 12]);
+        int changes = 0;
+        r.Changed += () => changes++;
+        r.Save(wav, " 大家好，我是这次会议的主持人。 ");
+        Check(r.Exists, "saved");
+        Equal(12.0, r.Duration, "its length");
+        Equal("大家好，我是这次会议的主持人。", r.Text, "its words, trimmed");
+        Check(!File.ReadAllText(r.AudioFile).Contains("RIFF") && File.ReadAllText(r.AudioFile).StartsWith("dpapi:"), "sealed on disk, not a plain WAV");
+        Check(!File.ReadAllText(r.TextFile).Contains("主持人"), "the words too");
+        var (audio, text) = r.Reference()!.Value;
+        Check(audio.StartsWith("data:audio/wav;base64,") && Convert.FromBase64String(audio[22..]).SequenceEqual(wav), "Ming gets the WAV back as a data URI");
+        Equal("大家好，我是这次会议的主持人。", text, "with what it says");
+        Equal(true, new VoiceReference(new FlipProtector(), folder).Exists, "read back by a fresh instance");
+        r.Remove();
+        Check(!r.Exists && !Directory.Exists(folder), "删除 takes the folder");
+        Equal(2, changes, "saved and removed are announced");
+    }
+
+    sealed class FlipProtector : IKeyProtector
+    {
+        public string Tag => "flip";
+        public byte[] Protect(byte[] data) => data.Select(b => (byte)~b).ToArray();
+        public byte[] Unprotect(byte[] data) => data.Select(b => (byte)~b).ToArray();
+    }
+
+    public static void SendsTheOwnVoiceAsAReference()
+    {
+        var ling = new AppSettings().AIConfig();
+        var cloned = LingClient.SpeechBody(ling, "Hello", "US_Emma", "ja", ("data:audio/wav;base64,AAAA", "大家好"));
+        var refs = cloned["references"]!.AsArray();
+        Equal(1, refs.Count, "one reference");
+        Equal(("data:audio/wav;base64,AAAA", "大家好"), (refs[0]!["audio"]!.GetValue<string>(), refs[0]!["text"]!.GetValue<string>()), "the clip and its words");
+        Check(cloned["voice"] is null, "no built-in voice beside it");
+        Equal("ja", cloned["language_id"]!.GetValue<string>(), "language_id still sent");
+        Check(cloned["stream"]!.GetValue<bool>() && cloned["sample_rate"]!.GetValue<int>() == 24000, "streamed as Ming's other voices");
+        var plain = LingClient.SpeechBody(ling, "Hello", "US_Emma", null);
+        Check(plain["references"] is null && plain["voice"]!.GetValue<string>() == "US_Emma", "a built-in voice sends no reference");
+        var zen = LingClient.SpeechBody(new AppSettings { AiProvider = "zenmux" }.AIConfig(), "Hello", null, null, ("data:x", "y"));
+        Check(zen["references"] is null, "only Ling clones");
+    }
+
+    public static void OwnVoiceFallsBackWithoutItsRecordingOrLing()
+    {
+        var ling = new AppSettings().AIConfig();
+        var zen = new AppSettings { AiProvider = "zenmux" }.AIConfig();
+        var s = new AppSettings { SpeakVoices = { ["en"] = "clone" } };
+        Equal("ming:US_Emma,ming:UK_George,ming:UK_Charlotte,system,clone", string.Join(",", VoiceCatalog.Options("en", ling, clone: true).Select(v => v.Id)), "offered last, once recorded");
+        Check(!VoiceCatalog.Options("en", ling).Any(v => v.Id == "clone"), "not before");
+        Equal("clone", VoiceCatalog.Chosen(s, "en", ling, true, clone: true), "used when recorded on Ling");
+        Equal("ming:US_Emma", VoiceCatalog.Chosen(s, "en", ling, true, clone: false), "the default without the recording");
+        Equal("cloud:Kore", VoiceCatalog.Chosen(s, "en", zen, true, clone: false), "and on another service");
+        Check(AIProvider.Ling.Clones && !AIProvider.ZenMux.Clones && !AIProvider.OpenRouter.Clones && !AIProvider.Custom.Clones, "only Ling clones");
+    }
+
+    public static async Task SpeaksInTheOwnVoiceAndFallsBackToWindows()
+    {
+        var old = LingClient.Spacing; LingClient.Spacing = 0;
+        var folder = Path.Combine(Paths.Root, "voice-engine-test");
+        try
+        {
+            var sse = new Service((_, _) => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("data: {\"audio\":\"AQACAA==\"}\n\ndata: {\"type\":\"speech.audio.done\"}\n\n", System.Text.Encoding.UTF8, "text/event-stream"),
+            });
+            var (ling, s) = Using(sse, "ling");
+            s.SpeakVoices["ja"] = "clone";
+            var reference = new VoiceReference(new PlainProtector(), folder);
+            var voice = new NoVoice();
+            var engine = new SpeakEngine(ling, new Translator(ling), new SessionStore(), s, () => "ja", () => null, voice);
+            // Not recorded: Ming's default voice for Japanese.
+            Check(await engine.Voice("こんにちは", "ja", new Sink()), "spoken");
+            Equal("ming", engine.LastVoice, "Ming's own voice before the recording");
+            engine.Reference = reference;
+            reference.Save(Wav.Bytes(new short[16000 * 11]), "大家好，我是主持人。");
+            Check(engine.CloneReady, "ready with Ling and a recording");
+            Check(await engine.Voice("こんにちは", "ja", new Sink()), "spoken");
+            Equal("clone", engine.LastVoice, "in the user's own voice");
+            var body = JsonNode.Parse(sse.Sent[^1].body)!;
+            Check(body["references"] is JsonArray { Count: 1 } && body["voice"] is null, "the recording went with it");
+            Equal("ja", body["language_id"]!.GetValue<string>(), "with Ming's language");
+            // Ling failing: Windows speaks the translation instead (never the original).
+            var down = new Service((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+            var (ling2, s2) = Using(down, "ling");
+            s2.SpeakVoices["ja"] = "clone";
+            var engine2 = new SpeakEngine(ling2, new Translator(ling2), new SessionStore(), s2, () => "ja", () => null, voice) { Reference = reference };
+            Check(await engine2.Voice("こんにちは", "ja", new Sink()), "still spoken");
+            Equal("system", engine2.LastVoice, "by Windows");
+        }
+        finally { LingClient.Spacing = old; try { Directory.Delete(folder, true); } catch { } }
+    }
+
+    public static void TellsASlowRecordingApart()
+    {
+        // 21 characters read over 4 s of sound (a second of silence each side): an ordinary pace.
+        var samples = new float[16000 * 6];
+        for (var i = 16000; i < 16000 * 5; i++) samples[i] = (float)Math.Sin(i * 0.05) * 0.3f;
+        var text = "大家好我是这次会议的主持人今天我们讨论计划";
+        var pace = VoicePace.Pace(text, samples, 16000)!.Value;
+        Check(Math.Abs(pace - 5.25) < 0.1, $"characters over the speech, not the silence ({pace})");
+        Check(!VoicePace.IsSlow(text, pace), "not slow");
+        Check(VoicePace.IsSlow(text, 1.7), "a recital at 1.7 a second is");
+        Check(!VoicePace.IsSlow("hello everyone thanks for joining", 2.0) && VoicePace.IsSlow("hello everyone thanks for joining", 1.5), "words for English");
+        Equal(null, VoicePace.SpeechSpan(new float[16000], 16000), "silence has no span");
+        Equal("hello,it's,大,家", string.Join(",", VoicePace.Tokens("Hello, it’s 大家!")), "tokens as the Mac's");
+    }
+
+    public static async Task ChecksARecordingBeforeKeepingIt()
+    {
+        static byte[] Spoken(double seconds)
+        {
+            var pcm = new short[(int)(16000 * seconds)];
+            for (var i = 8000; i < pcm.Length - 8000; i++) pcm[i] = (short)(Math.Sin(i * 0.05) * 9000);
+            return Wav.Bytes(pcm);
+        }
+        var passage = VoiceCloneCheck.Passage("zh-CN")[..40];
+        Equal(VoiceCloneCheck.Outcome.TooShort, (await VoiceCloneCheck.Check(Spoken(9), _ => Task.FromResult<string?>(passage))).outcome, "under 10 s");
+        Equal(VoiceCloneCheck.Outcome.NotHeard, (await VoiceCloneCheck.Check(Spoken(12), _ => Task.FromResult<string?>("嗯"))).outcome, "nothing recognisable");
+        Equal(VoiceCloneCheck.Outcome.NotHeard, (await VoiceCloneCheck.Check(Spoken(12), _ => throw new LingException(LingException.Kind.Network))).outcome, "the hearing failed");
+        Equal(VoiceCloneCheck.Outcome.Slow, (await VoiceCloneCheck.Check(Spoken(14), _ => Task.FromResult<string?>("大家好我是主持人今天讨论"))).outcome, "12 characters in 13 s");
+        var (ok, text) = await VoiceCloneCheck.Check(Spoken(12), _ => Task.FromResult<string?>(" " + passage + " "));
+        Equal((VoiceCloneCheck.Outcome.Ready, passage), (ok, text), "an ordinary reading is kept with its words");
+    }
+
     public static async Task HearingGoesToTheChosenHearModel()
     {
         Equal(12.0, Translator.HearTimeout(new AppSettings().AIConfig()), "Ming's timeout");
