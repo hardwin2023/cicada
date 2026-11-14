@@ -1119,7 +1119,7 @@
 "转完后生成" = "After transcribing";
 "收起原话" = "Hide original";
 "在纪要旁显示原话" = "Show the original beside the notes";
-"复制为 Markdown" = "Copy as Markdown";
+"复制全文" = "Copy Everything";
 "导出 Markdown…" = "Export Markdown…";
 "导出 Word…" = "Export Word…";
 "导出字幕 SRT…" = "Export SRT Subtitles…";

@@ -1930,8 +1930,7 @@ final class AppModel: ObservableObject {
 
     func export(_ session: Session, kind: String) {
         if kind == "copy" {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(TranscriptExport.markdown(session), forType: .string)
+            RichCopy.session(session)
             return
         }
         let panel = NSSavePanel()

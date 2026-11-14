@@ -42,3 +42,38 @@ import Testing
         #expect(!md.contains("> Same"))
     }
 }
+
+@Suite struct RichCopyTests {
+    private var notes: MeetingNotes {
+        var n = MeetingNotes()
+        n.summary = "A <b> & \"c\""
+        n.topics = [NoteTopic(start: 65, title: "Why late", summary: "", points: ["one"],
+                              fishbone: Fishbone(question: "Why?", branches: [FishboneBranch(label: "Tests", detail: "not run", t: 70, support: 2)]))]
+        n.todos = [NoteItem(text: "Ship", owner: nil, support: 1)]
+        return n
+    }
+
+    @Test func escapesAndKeepsStructure() {
+        let html = TranscriptExport.notesHTML(notes)
+        #expect(html.contains("<p>A &lt;b&gt; &amp; &quot;c&quot;</p>"))
+        #expect(html.contains("<h3>01:05 Why late</h3>"))
+        #expect(html.contains("<li>one</li>"))
+        // A to-do keeps a ballot box, as a checkbox doesn't survive a paste.
+        #expect(html.contains("<li>☐ Ship</li>"))
+        #expect(!html.contains("<img"))
+    }
+
+    /// The picture comes first and the same branches follow as text, for an app that drops images.
+    @Test func fishboneIsPictureThenList() {
+        let html = TranscriptExport.notesHTML(notes) { _ in .init(png: Data([1, 2, 3]), width: 520) }
+        let img = html.range(of: "<img src=\"data:image/png;base64,AQID\" width=\"520\" alt=\"Why?\">")
+        let list = html.range(of: "<li><b>Tests</b>：not run</li>")
+        #expect(img != nil && list != nil)
+        if let img, let list { #expect(img.lowerBound < list.lowerBound) }
+    }
+
+    @Test func emptyNotesGiveNothing() {
+        #expect(TranscriptExport.notesHTML(nil).isEmpty)
+        #expect(TranscriptExport.notesHTML(MeetingNotes()).isEmpty)
+    }
+}

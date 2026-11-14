@@ -424,6 +424,8 @@ struct TimeLink: View {
 struct FishboneView: View {
     let fishbone: Fishbone
     var onJump: (Double) -> Void = { _ in }
+    /// Drawn for 复制为图片 or 复制纪要: no hint, no menu.
+    var forPicture = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -447,7 +449,9 @@ struct FishboneView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Text("点击分支跳回原话").font(.system(size: 11)).foregroundStyle(Palette.tertiary)
+            if !forPicture {
+                Text("点击分支跳回原话").font(.system(size: 11)).foregroundStyle(Palette.tertiary)
+            }
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 16).stroke(Palette.line, lineWidth: 1))

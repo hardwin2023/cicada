@@ -1225,7 +1225,7 @@ struct MainWindowView: View {
                 .help(L("用保存的录音重新识别，替换现在的文字记录和纪要；旧记录会先备份"))
             }
             Menu {
-                Button("复制为 Markdown") { model.export(s, kind: "copy") }
+                Button("复制全文") { model.export(s, kind: "copy") }
                 Divider()
                 Button("导出 Markdown…") { model.export(s, kind: "md") }
                 Button("导出 Word…") { model.export(s, kind: "word") }

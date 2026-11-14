@@ -210,8 +210,7 @@ final class AppMenu: NSObject, NSMenuItemValidation {
 
     @objc private func copyNotes() {
         guard let model else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(TranscriptExport.notesMarkdown(model.notes.notes), forType: .string)
+        RichCopy.notes(model.notes.notes, title: model.notes.notes.title)
     }
 
     @objc private func exportNotes(_ sender: NSMenuItem) {
