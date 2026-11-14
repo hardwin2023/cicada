@@ -231,3 +231,5 @@
 "Ling 不可用时自动换成手机的声音" = "Falls back to the phone's voice when Ling is unavailable";
 "%@ 用不了时，自动换手机的声音" = "Falls back to the phone's voice if %@ is unavailable";
 "这个服务不出声音，用手机的声音" = "This service has no voice; using the phone's voice";
+"用你的声音读一句英语" = "Hear an English sentence in your own voice";
+"听起来不像或有杂音？换个安静的地方重录一次。录音只存在这台手机上，可随时删除。" = "Doesn't sound like you, or noisy? Record again somewhere quiet. The recording stays on this phone and can be deleted anytime.";

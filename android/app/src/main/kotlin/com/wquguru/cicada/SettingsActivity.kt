@@ -96,7 +96,11 @@ class SettingsActivity : Activity() {
                        trailing = value(theirVoice?.let { VoicesActivity.name(it) } ?: L("手机的声音"))) {
                 startActivity(Intent(this, VoicesActivity::class.java).putExtra("id", their))
             },
-            ui.listRow(L("试一句"), if (english == null || english.id == VoiceCatalog.PHONE) L("用手机的声音读一句英语") else Strings.LF("用 %@ 的声音读一句英语", english.name),
+            ui.listRow(L("试一句"), when (english?.id) {
+                           null, VoiceCatalog.PHONE -> L("用手机的声音读一句英语")
+                           VoiceCatalog.CLONE -> L("用你的声音读一句英语")
+                           else -> Strings.LF("用 %@ 的声音读一句英语", english.name)
+                       },
                        trailing = ui.icon(R.drawable.i_play, 20, Palette.ink), chevron = false) { tryVoice() })))
 
         page.addView(ui.sectionLabel(L("在其他应用上")))

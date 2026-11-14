@@ -1,8 +1,9 @@
 package cicada
 
 /// A voice 我说 can read with (Voices.swift's VoiceOption): one of Ming's (through the Ling key), one
-/// of another service's speech model, or the phone's text-to-speech. `id` is what settings keep:
-/// "ming:US_Emma", "cloud:Kore", "phone".
+/// of another service's speech model, the phone's text-to-speech, or the user's own voice cloned
+/// from a recording (VoiceReference). `id` is what settings keep: "ming:US_Emma", "cloud:Kore",
+/// "phone", "clone".
 data class VoiceOption(val id: String, val name: String, /** Chinese UI keys, localized where shown. */ val tags: List<String>)
 
 /// Which voices to offer for each language the other side may hear (VoiceCatalog in Voices.swift).
@@ -10,6 +11,7 @@ data class VoiceOption(val id: String, val name: String, /** Chinese UI keys, lo
 /// speak it with `language_id`. The phone's own voice follows, so there is always one without a key.
 object VoiceCatalog {
     const val PHONE = "phone"
+    const val CLONE = "clone"
     const val MING = "ming:"
     const val CLOUD = "cloud:"
 
@@ -45,6 +47,7 @@ object VoiceCatalog {
     }
 
     val phone = VoiceOption(PHONE, "手机的声音", listOf("本机"))
+    val clone = VoiceOption(CLONE, "我自己的声音", emptyList())
 
     fun options(language: String, config: AIConfig): List<VoiceOption> = remote(language, config) + phone
 
@@ -54,20 +57,22 @@ object VoiceCatalog {
         (if (speaks) remote(language, config).firstOrNull()?.id else null) ?: PHONE
 
     /// The chosen voice for a language, or its default (AppModel.voiceID): a choice the service in
-    /// use can't speak (Ming after switching to OpenRouter, any after the key is gone) falls back
-    /// to the default, and comes back with that service.
-    fun chosen(voices: Map<String, String>, language: String, config: AIConfig, speaks: Boolean): String {
+    /// use can't speak (Ming after switching to OpenRouter, any after the key is gone, the user's
+    /// own voice without Ling or without a recording: `canClone`) falls back to the default, and
+    /// comes back with that service.
+    fun chosen(voices: Map<String, String>, language: String, config: AIConfig, speaks: Boolean, canClone: Boolean = false): String {
         val fallback = defaultId(language, config, speaks)
         val id = voices[key(language)] ?: return fallback
         return when {
             id == PHONE -> id
+            id == CLONE -> if (canClone) id else fallback
             speaks && remote(language, config).any { it.id == id } -> id
             else -> fallback
         }
     }
 
     fun option(id: String, language: String, config: AIConfig): VoiceOption? =
-        options(language, config).firstOrNull { it.id == id }
+        if (id == CLONE) clone else options(language, config).firstOrNull { it.id == id }
 
     /// A short line to try a voice with, in the language it will speak.
     fun sample(language: String): String = when (key(language)) {

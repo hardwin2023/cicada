@@ -9,6 +9,7 @@ import cicada.Strings
 import cicada.Log
 import cicada.Session
 import cicada.VoiceCatalog
+import cicada.VoiceReference
 import cicada.Wav
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -25,6 +26,7 @@ import java.util.concurrent.TimeUnit
 ///   ai-base <url> (the custom service's address) · ai-notes same|own · ai-notes-base <url> · notes-key import <file in files/>|remove (the custom service's 纪要)
 ///   key import <file in files/> (sealed as the current service's key, the plain file deleted) | voice-try (设置's 试一句)
 ///   voice <lang>[=<id>] (读出来的声音: choose, or say it and the options) · voice-preview <lang> [<id>] (试听) · show voices [lang]
+///   voiceref <wav in files/> [lang] | remove (我自己的声音 from a pushed recording) · show record-voice <lang> [<wav in files/>]
 ///   ai-check (重新检查) | ai-check-sim <reason|lowBalance|off> (every check ends that way; the state's ai.check has the steps)
 ///   改正听错的词: fixes on|off · asknames on|off · silent (a meeting with no audio) · heard <text> · vocab add|remove|state
 ///   fixstate · fixanswer yes|no · fixrevert <line> · fixlater · fixundo · fixedit <line>=<text>[|one][|keep0] · pinyin <text>
@@ -141,7 +143,24 @@ class DebugReceiver : BroadcastReceiver() {
                     if (id.isEmpty()) app.settings.speakVoices.remove(VoiceCatalog.key(lang)) else app.settings.speakVoices[VoiceCatalog.key(lang)] = id
                     app.saveSettings()
                 }
-                return mapOf("lang" to lang, "voice" to app.voiceId(lang), "options" to VoiceCatalog.options(lang, app.ling.config()).map { it.id })
+                return mapOf("lang" to lang, "voice" to app.voiceId(lang), "options" to VoiceCatalog.options(lang, app.ling.config()).map { it.id },
+                             "clone" to VoiceReference.exists, "cloneSeconds" to VoiceReference.duration, "clones" to app.ling.clones)
+            }
+            // 我自己的声音 without a microphone: `voiceref <wav in files/> [<lang>]` checks a pushed
+            // recording as 录制 would (Ming hears it) and saves it for <lang>; `voiceref remove` is 删除.
+            // Replies with numbers only (never what it says).
+            "voiceref" -> {
+                if (arg == "remove") { app.removeVoiceReference(); return mapOf("exists" to VoiceReference.exists) }
+                val name = arg.substringBefore(' ')
+                val lang = arg.substringAfter(' ', "en")
+                val pcm = Wav.read(File(app.filesDir, name).inputStream())
+                app.background.execute {
+                    when (val r = VoiceReference.check(app.translator, pcm, app.settings.targetCode)) {
+                        is VoiceReference.Check.Ok -> app.main.post { Log.d("debug: voiceref saved=${app.saveVoiceReference(pcm, r.text, lang)}") }
+                        is VoiceReference.Check.Again -> Log.d("debug: voiceref refused: ${Strings.LF(r.reason, *r.args.toTypedArray())}")
+                    }
+                }
+                return mapOf("seconds" to pcm.size / 16000.toDouble(), "checking" to true)
             }
             "voice-preview" -> {
                 val words = arg.split(Regex("\\s+"), 2)
@@ -258,6 +277,12 @@ class DebugReceiver : BroadcastReceiver() {
                 "words" -> open(WordListActivity::class.java)
                 "ai" -> open(AiServiceActivity::class.java)
                 "voices" -> open(VoicesActivity::class.java, arg.substringAfter(' ', "").ifEmpty { null })
+                // `show record <lang> [<wav in files/>]`: 录制 for that language; a WAV stands in for the mic.
+                "record-voice" -> {
+                    val rest = arg.substringAfter(' ', "").split(' ')
+                    app.startActivity(Intent(app, VoiceRecordActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        .putExtra("id", rest[0].ifEmpty { "en" }).apply { rest.getOrNull(1)?.let { putExtra("wav", it) } })
+                }
                 "onboarding" -> open(OnboardingActivity::class.java)
                 "record" -> open(RecordActivity::class.java, arg.substringAfter(' ', "").ifEmpty { app.store.all().firstOrNull { it.id != app.listen.sessionId || !app.listen.listening }?.id })
                 "records" -> open(RecordsActivity::class.java)

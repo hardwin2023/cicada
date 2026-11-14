@@ -8,6 +8,7 @@
 //   cicada-cli say <file.wav> [--to en] [--out said.wav]
 //       我说 · 面对面: what I say heard and translated, then read by the service's voice into a WAV
 //   cicada-cli speak <text> [--voice US_Emma] [--lang ja] [--out speak.wav]   one line in the service's voice
+//       --reference <wav> [--own zh-CN]: in the voice of that recording (我自己的声音), checked first
 //   cicada-cli segments <file.wav>        where the segmenter cuts
 //   cicada-cli roundtrip <session.json>…  reads and writes records, says if a byte changed
 //
@@ -117,10 +118,18 @@ fun main(argv: Array<String>) {
             val ling = client(settings())
             val voice = opt("--voice", "").ifEmpty { null }
             val lang = opt("--lang", "").ifEmpty { null }
+            // --reference <wav> [--own zh-CN]: the user's own voice, the recording checked as 录制 checks it.
+            val reference = opt("--reference", "").ifEmpty { null }?.let { path ->
+                val pcm = Wav.read(File(path).inputStream())
+                when (val r = VoiceReference.check(Translator(ling), pcm, opt("--own", "zh-CN"))) {
+                    is VoiceReference.Check.Ok -> { println("reference: %.1f s, heard %d characters".format(pcm.size / 16000.0, r.text.length)); "data:audio/wav;base64," + java.util.Base64.getEncoder().encodeToString(Wav.bytes(pcm)) to r.text }
+                    is VoiceReference.Check.Again -> { println("reference refused: ${Strings.LF(r.reason, *r.args.toTypedArray())}"); exitProcess(1) }
+                }
+            }
             val out = java.io.ByteArrayOutputStream()
             val t = System.currentTimeMillis()
             var first = 0L
-            ling.speech(args[1], voice, lang) { if (first == 0L) first = System.currentTimeMillis() - t; out.write(it) }
+            ling.speech(args[1], voice, lang, reference = reference) { if (first == 0L) first = System.currentTimeMillis() - t; out.write(it) }
             val bytes = out.toByteArray()
             val samples = ShortArray(bytes.size / 2) { ((bytes[2 * it].toInt() and 0xff) or (bytes[2 * it + 1].toInt() shl 8)).toShort() }
             val file = File(opt("--out", "speak.wav"))

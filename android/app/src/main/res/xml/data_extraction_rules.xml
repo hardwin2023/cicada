@@ -12,6 +12,8 @@
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="ling-api-key" />
+        <!-- 我自己的声音: the recording of the user's voice stays on this phone. -->
+        <exclude domain="file" path="voice" />
         <!-- 分享…: this phone's share identity and the links' manage tokens stay on this phone. -->
         <exclude domain="file" path="share-device.json" />
         <exclude domain="file" path="Shares" />

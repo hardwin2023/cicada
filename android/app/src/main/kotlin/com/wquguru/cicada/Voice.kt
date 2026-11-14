@@ -70,12 +70,13 @@ class Voice(private val context: Context) {
     private class Stopped : RuntimeException()
     @Volatile private var track: AudioTrack? = null
 
-    /// Reads `text` in the AI service's `voiceName` (Ming's with `language`, Ming's language_id): its
-    /// 24 kHz PCM goes into an AudioTrack as it arrives, so the first words play before the rest has
-    /// come. Blocks until it has played (or `stop`). `onStart` comes with the first sound; `onEnd`
-    /// always comes. Failed lets the caller fall back to the phone's voice.
+    /// Reads `text` in the AI service's `voiceName` (Ming's with `language`, Ming's language_id), or
+    /// in the user's own voice cloned from `reference`: its 24 kHz PCM goes into an AudioTrack as it
+    /// arrives, so the first words play before the rest has come. Blocks until it has played (or
+    /// `stop`). `onStart` comes with the first sound; `onEnd` always comes. Failed lets the caller
+    /// fall back to the phone's voice.
     fun speakCloud(ling: LingClient, text: String, voiceName: String?, language: String?,
-                   onStart: () -> Unit, onEnd: () -> Unit): Result {
+                   onStart: () -> Unit, onEnd: () -> Unit, reference: Pair<String, String>? = null): Result {
         val rate = LingClient.TTS_RATE
         val t = try {
             AudioTrack.Builder()
@@ -91,7 +92,7 @@ class Voice(private val context: Context) {
         speaking = true
         var frames = 0L
         try {
-            ling.speech(text, voiceName, language) { pcm ->
+            ling.speech(text, voiceName, language, reference = reference) { pcm ->
                 if (track !== t) throw Stopped()
                 if (frames == 0L) { t.play(); Log.d("voice: cloud start"); onStart() }
                 t.write(pcm, 0, pcm.size)

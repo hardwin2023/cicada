@@ -284,6 +284,8 @@ class LingClient(
     val usable get() = hasKey && keyState != KeyState.Invalid
     /// The service's own voice reads my words to the other side (otherwise the phone's voice).
     val speaks get() = usable && config().hasVoices
+    /// The user's own voice: only Ling clones.
+    val clones get() = speaks && config().provider.clones
     /// Whether the hear model takes audio: false once it refused (a check or a meeting), true once
     /// it heard, null until then (always true on Ling: Ming).
     val hears: Boolean? get() = when (val s = aiCheck[AICheck.StepID.Hear]) {
@@ -737,12 +739,15 @@ class LingClient(
 
     /// The service's voice for `text`, handed to `onPcm` as raw 24 kHz mono 16-bit PCM while it
     /// arrives. `voice` is one of the service's (another, e.g. a Ming name, becomes its first);
-    /// `language` is Ming's language_id, Ling only. Replies come three ways and all are read:
-    /// server-sent base64 chunks (Ling, ZenMux), raw PCM (OpenRouter), or one JSON `{"audio": <WAV>}`.
-    fun speech(text: String, voice: String? = null, language: String? = null, timeout: Double = 20.0, onPcm: (ByteArray) -> Unit) {
+    /// `language` is Ming's language_id, Ling only; `reference` (a WAV data URI and what it says,
+    /// VoiceReference) clones the user's voice instead, Ling only. Replies come three ways and all
+    /// are read: server-sent base64 chunks (Ling, ZenMux), raw PCM (OpenRouter), or one JSON
+    /// `{"audio": <WAV>}`.
+    fun speech(text: String, voice: String? = null, language: String? = null, timeout: Double = 20.0,
+               reference: Pair<String, String>? = null, onPcm: (ByteArray) -> Unit) {
         // The voice isn't part of a check (it costs money): its real outcome is what 现在能用的 says.
         try {
-            speak(text, voice, language, timeout, onPcm)
+            speak(text, voice, language, if (reference != null) maxOf(timeout, 30.0) else timeout, reference, onPcm)
             lastVoice = true to System.currentTimeMillis(); changed()
         } catch (e: LingException) {
             lastVoice = false to System.currentTimeMillis(); changed()
@@ -751,14 +756,19 @@ class LingClient(
         // Anything else came from onPcm: the phone stopped it on purpose, not a failure.
     }
 
-    private fun speak(text: String, voice: String?, language: String?, timeout: Double, onPcm: (ByteArray) -> Unit) {
+    private fun speak(text: String, voice: String?, language: String?, timeout: Double, reference: Pair<String, String>?, onPcm: (ByteArray) -> Unit) {
         val k = currentKey() ?: throw LingException(LingException.Kind.NoKey)
         val c = config()
         val voiceBase = c.voiceBase
         if (!c.hasVoices || voiceBase == null) throw LingException(LingException.Kind.NoKey)
+        // Only Ling clones: elsewhere a reference would read in someone else's voice, so refuse
+        // and let the caller fall back.
+        if (reference != null && !c.provider.clones) throw LingException(LingException.Kind.NoKey)
         val body = linkedMapOf<String, Any?>("model" to c.voiceModel, "input" to text, "response_format" to "pcm")
         if (c.isLing) {
-            body.putAll(mapOf("sample_rate" to TTS_RATE, "stream" to true, "stream_format" to "sse", "voice" to (voice ?: "UK_Charlotte")))
+            body.putAll(mapOf("sample_rate" to TTS_RATE, "stream" to true, "stream_format" to "sse"))
+            if (reference != null) body["references"] = listOf(mapOf("audio" to reference.first, "text" to reference.second))
+            else body["voice"] = voice ?: "UK_Charlotte"
             if (language != null) body["language_id"] = language
         } else {
             // OpenRouter documents no `stream` (it streams the bytes anyway); ZenMux needs it.
