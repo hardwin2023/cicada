@@ -160,7 +160,10 @@ sealed class VoiceCloneDialog
         seconds = Math.Max(0, recorded.Length - 44) / 32000.0;
         phase = Phase.Checking;
         Render();
-        var (outcome, text) = await VoiceCloneCheck.Check(recorded, app.Transcribe);
+        var (outcome, text, trimmed) = await VoiceCloneCheck.Check(recorded, app.Transcribe);
+        // What is played back, previewed and kept: the reading without the quiet at its ends.
+        wav = trimmed;
+        seconds = Math.Max(0, trimmed.Length - 44) / 32000.0;
         transcript = text;
         Log.Debug($"voice clone: {outcome}");
         switch (outcome)

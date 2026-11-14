@@ -8,7 +8,8 @@
 //   cicada-cli check                     the AI service's key check: state, hears, catalog sizes
 //   cicada-cli speak <text> <out.wav>    the service's voice for <text>, as a 24 kHz WAV; --voice <id>,
 //       --lang <code> (Ming's language_id), --clone <reference.wav> [--clone-text <what it says>]
-//       [--from <my language>] for the user's own voice (Ling only)
+//       [--from <my language>] for the user's own voice (Ling only), kept as the app keeps it
+//       (quiet ends trimmed) unless --raw sends the file as it is
 //   cicada-cli segments <file.wav>       where the segmenter cuts (compare with ming_asr.py)
 //   cicada-cli roundtrip <session.json>…  reads and writes records, says if anything changed
 //
@@ -86,13 +87,23 @@ switch (args_[0])
             if (text.Length == 0)
             {
                 var me = Opt("--from", "zh-CN");
-                var (outcome, heard) = await VoiceCloneCheck.Check(refWav,
+                var (outcome, heard, trimmed) = await VoiceCloneCheck.Check(refWav,
                     async w => (await new Translator(ling).Hear(w, SpeakEngine.TargetFor("room", "en", me), me, Priority.Speak))?.Original);
-                Console.WriteLine($"reference: {(refWav.Length - 44) / 32000.0:F1} s, {outcome}, heard «{heard}»");
+                Console.WriteLine($"reference: {(refWav.Length - 44) / 32000.0:F1} s, {(trimmed.Length - 44) / 32000.0:F1} s trimmed, {outcome}, heard «{heard}»");
                 if (outcome != VoiceCloneCheck.Outcome.Ready) return 1;
                 text = heard;
+                refWav = trimmed;
             }
-            reference = ("data:audio/wav;base64," + Convert.ToBase64String(refWav), text);
+            if (args_.Contains("--raw")) reference = ("data:audio/wav;base64," + Convert.ToBase64String(refWav), text);
+            else
+            {
+                // Kept and read back as the app keeps it (VoiceReference.Save trims the quiet ends).
+                var kept = new VoiceReference(new PlainProtector(), Path.Combine(Path.GetTempPath(), $"cicada-cli-voice-{Environment.ProcessId}"));
+                kept.Save(refWav, text);
+                reference = kept.Reference();
+                Console.WriteLine($"reference kept: {kept.Duration:F1} s");
+                kept.Remove();
+            }
         }
         var lang = Opt("--lang", "");
         var started = DateTime.UtcNow;

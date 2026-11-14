@@ -1582,9 +1582,9 @@ static class DebugServer
                 var target = app.Speak.Target;
                 _ = Task.Run(async () =>
                 {
-                    var (outcome, text) = await VoiceCloneCheck.Check(wav, w => given is not null ? Task.FromResult<string?>(given) : app.Transcribe(w));
+                    var (outcome, text, trimmed) = await VoiceCloneCheck.Check(wav, w => given is not null ? Task.FromResult<string?>(given) : app.Transcribe(w));
                     Log.Debug($"ownvoice: {outcome}");
-                    if (outcome == VoiceCloneCheck.Outcome.Ready) app.Dispatcher().Invoke(() => app.SaveOwnVoice(wav, text, target));
+                    if (outcome == VoiceCloneCheck.Outcome.Ready) app.Dispatcher().Invoke(() => app.SaveOwnVoice(trimmed, text, target));
                 });
                 break;
             }

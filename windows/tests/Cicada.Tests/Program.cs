@@ -3017,8 +3017,32 @@ static class Tests
         Equal(VoiceCloneCheck.Outcome.NotHeard, (await VoiceCloneCheck.Check(Spoken(12), _ => Task.FromResult<string?>("嗯"))).outcome, "nothing recognisable");
         Equal(VoiceCloneCheck.Outcome.NotHeard, (await VoiceCloneCheck.Check(Spoken(12), _ => throw new LingException(LingException.Kind.Network))).outcome, "the hearing failed");
         Equal(VoiceCloneCheck.Outcome.Slow, (await VoiceCloneCheck.Check(Spoken(14), _ => Task.FromResult<string?>("大家好我是主持人今天讨论"))).outcome, "12 characters in 13 s");
-        var (ok, text) = await VoiceCloneCheck.Check(Spoken(12), _ => Task.FromResult<string?>(" " + passage + " "));
+        var (ok, text, kept) = await VoiceCloneCheck.Check(Spoken(12), _ => Task.FromResult<string?>(" " + passage + " "));
         Equal((VoiceCloneCheck.Outcome.Ready, passage), (ok, text), "an ordinary reading is kept with its words");
+        Equal(11.4, Math.Round((kept.Length - 44) / 32000.0, 2), "and without its quiet ends (11 s read, 0.2 s kept each side)");
+        // 9.5 s read and a 3 s pause before 读完了: 12.5 s recorded, but under 10 s of reading.
+        var paused = Spoken(10.5).Concat(new byte[16000 * 3 * 2]).ToArray();
+        BitConverter.GetBytes(paused.Length - 44).CopyTo(paused, 40);
+        Equal(VoiceCloneCheck.Outcome.TooShort, (await VoiceCloneCheck.Check(paused, _ => Task.FromResult<string?>(passage))).outcome, "the minimum is of the reading");
+    }
+
+    public static void TrimsTheQuietEndsOfTheRecording()
+    {
+        // 1 s quiet, 3 s of reading, 1 s quiet (the pause before 读完了 made Ming's clone silent).
+        var pcm = new short[16000 * 5];
+        for (var i = 16000; i < 16000 * 4; i++) pcm[i] = (short)(Math.Sin(i * 0.05) * 9000);
+        var trimmed = VoicePace.Trim(Wav.Bytes(pcm));
+        Equal(3.4, Math.Round((trimmed.Length - 44) / 32000.0, 2), "the reading and 0.2 s each side");
+        Check(trimmed[..4].SequenceEqual("RIFF"u8.ToArray()) && BitConverter.ToInt32(trimmed, 40) == trimmed.Length - 44, "still a WAV with the right length");
+        Equal(0, (int)BitConverter.ToInt16(trimmed, 44 + 2 * 3199), "quiet kept before the first word");
+        Check(BitConverter.ToInt16(trimmed, 44 + 2 * 3300) != 0, "the reading starts 0.2 s in");
+        var silent = Wav.Bytes(new short[16000]);
+        Check(VoicePace.Trim(silent).SequenceEqual(silent), "all quiet: left as it is");
+        var folder = Path.Combine(Paths.Root, "voice-trim-test");
+        var r = new VoiceReference(new PlainProtector(), folder);
+        r.Save(Wav.Bytes(pcm), "大家好");
+        Equal(3.4, Math.Round(r.Duration, 2), "kept trimmed");
+        r.Remove();
     }
 
     public static async Task HearingGoesToTheChosenHearModel()

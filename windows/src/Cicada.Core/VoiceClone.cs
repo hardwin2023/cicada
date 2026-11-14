@@ -60,8 +60,10 @@ public sealed class VoiceReference(IKeyProtector protector, string? folder = nul
 
     string Seal(byte[] data) => Sealed + Convert.ToBase64String(protector.Tag == "plain" ? data : protector.Protect(data));
 
+    /// Keeps `wav` trimmed of the quiet at its ends (a trailing pause makes Ming's clone silent).
     public void Save(byte[] wav, string text)
     {
+        wav = VoicePace.Trim(wav);
         lock (gate)
         {
             Directory.CreateDirectory(Folder);
@@ -126,7 +128,31 @@ public static class VoicePace
     }
 
     /// Seconds from the first to the last 20 ms window within 35 dB of the loudest one.
-    public static double? SpeechSpan(float[] samples, double sampleRate)
+    public static double? SpeechSpan(float[] samples, double sampleRate) =>
+        SpeechWindows(samples, sampleRate) is var (first, last, size) ? (last - first + 1) * (double)size / sampleRate : null;
+
+    /// Quiet kept each side of the reading when trimming.
+    public const double TrimPad = 0.2;
+
+    /// A recording (16 kHz mono WAV) without the quiet before and after the reading, 0.2 s kept each
+    /// side (linux voice_reference.trim). Ming copies the clip's ending: a second of silence after
+    /// the last word (the pause before 读完了) made every cloned sentence come back silent
+    /// (measured 2026-11 against Ling: 8.2 s of nothing instead of 3.5 s of voice).
+    public static byte[] Trim(byte[] wav, int rate = 16000)
+    {
+        var start = wav.Length >= 44 && wav[0] == 'R' && wav[1] == 'I' ? 44 : 0;
+        if (SpeechWindows(Samples(wav), rate) is not var (first, last, size)) return wav;
+        var pad = (int)(TrimPad * rate);
+        var n = (wav.Length - start) / 2;
+        int from = Math.Max(0, first * size - pad), to = Math.Min(n, (last + 1) * size + pad);
+        var pcm = new short[to - from];
+        Buffer.BlockCopy(wav, start + from * 2, pcm, 0, pcm.Length * 2);
+        return Cicada.Wav.Bytes(pcm, rate);
+    }
+
+    /// The first and last 20 ms windows within 35 dB of the loudest one, and the window size; null
+    /// when it is all quiet.
+    static (int first, int last, int size)? SpeechWindows(float[] samples, double sampleRate)
     {
         var size = Math.Max(1, (int)(sampleRate * 0.02));
         var levels = new List<float>();
@@ -141,9 +167,7 @@ public static class VoicePace
         var loudest = levels.Max();
         if (loudest <= 0.003f) return null;
         var floor = loudest * 0.0178f;
-        var first = levels.FindIndex(l => l >= floor);
-        var last = levels.FindLastIndex(l => l >= floor);
-        return (last - first + 1) * (double)size / sampleRate;
+        return (levels.FindIndex(l => l >= floor), levels.FindLastIndex(l => l >= floor), size);
     }
 
     /// Words, and each CJK character on its own (SpeakTest.swift › SpeakScore.tokens).
@@ -181,7 +205,16 @@ public static class VoiceCloneCheck
 {
     public enum Outcome { Ready, TooShort, NotHeard, Slow }
 
-    public static async Task<(Outcome outcome, string text)> Check(byte[] wav, Func<byte[], Task<string?>> transcribe)
+    /// `wav` comes back trimmed of the quiet at its ends (VoicePace.Trim): that is what is kept, and
+    /// the 10 s minimum is of the reading itself, not of the pause before 读完了.
+    public static async Task<(Outcome outcome, string text, byte[] wav)> Check(byte[] recorded, Func<byte[], Task<string?>> transcribe)
+    {
+        var wav = VoicePace.Trim(recorded);
+        var (outcome, text) = await CheckTrimmed(wav, transcribe);
+        return (outcome, text, wav);
+    }
+
+    static async Task<(Outcome outcome, string text)> CheckTrimmed(byte[] wav, Func<byte[], Task<string?>> transcribe)
     {
         var seconds = Math.Max(0, wav.Length - 44) / 32000.0;
         if (seconds < VoiceReference.MinSeconds) return (Outcome.TooShort, "");
