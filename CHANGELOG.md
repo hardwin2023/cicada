@@ -19,6 +19,7 @@ every platform (one with nothing new says No changes); earlier ones shipped only
 - Name a voice from its transcript tag ([fc143e8](https://github.com/wquguru/cicada/commit/fc143e8d2a772acd1112948c26d9a73496992d2f))
 - Copy Notes and Copy Everything paste into document apps with headings, lists and the fishbone as a picture ([d8471f7](https://github.com/wquguru/cicada/commit/d8471f73e3d765c08bfdbae1e09f062aa3c19905))
 - Right-click a fishbone to copy it as an image or as text ([2647a9d](https://github.com/wquguru/cicada/commit/2647a9da9cd9f47cb676e3bdac1fd69222291758))
+- Click a finished meeting's summary, a conclusion or a to-do to fix it in place ([c8b0952](https://github.com/wquguru/cicada/commit/c8b09526c1ad6eabf62404b362ca7b9fa173bb87))
 
 #### Fixed
 
