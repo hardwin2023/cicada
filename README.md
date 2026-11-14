@@ -68,7 +68,7 @@ Hold the right `⌥` key and speak so the other side hears your translated voice
 
 On a Mac, you can also turn on **Hands-free** in **Settings › Interpreting**: just start talking while listening to a meeting, the meeting audio automatically ducks, and your translated voice goes out after a 1-second pause. It pauses while the mic is on, and we recommend switching back to the talk key when others are nearby so their voices aren't mistaken for yours.
 
-Turning on interpreting switches the system microphone to BlackHole 2ch, a virtual driver you can download and install with one click. With a Ling API key, you can use natural voices or clone your own voice from an 8 to 30 second recording; without a key, you can still use built-in macOS voices.
+Turning on interpreting switches the system microphone to BlackHole 2ch, a virtual driver you can download and install with one click. With a Ling API key, you can use natural voices or clone your own voice from an 8 to 30 second recording; without a key, you can still use built-in macOS voices. Windows and Linux interpreting, and Android's In person, can use your own voice too, cloned from a 10 to 15 second recording with a Ling key.
 
 <p align="center">
   <img src="docs/interpreting.png" width="640" alt="Interpreting settings showing the right Option talk key, target language, Ming voice previews, and macOS voices">
