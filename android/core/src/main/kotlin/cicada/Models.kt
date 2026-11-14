@@ -81,10 +81,13 @@ class Session(
     var importing: Boolean? = null,
     /// Heard through the microphone in the room (会议室) for some or all of it.
     var room: Boolean? = null,
+    /// Keys this version doesn't know (the Mac's voiceProfiles / voiceSuggestions, newer
+    /// fields), written back untouched so saving here never drops another platform's data.
+    var extra: Map<String, Any?> = emptyMap(),
 ) {
     val durationSeconds: Double get() = ((endedAt ?: Instant.now()).toEpochMilli() - startedAt.toEpochMilli()) / 1000.0
 
-    fun toJson(): Map<String, Any?> = mapOf(
+    fun toJson(): Map<String, Any?> = extra + mapOf(
         "id" to id, "title" to title, "startedAt" to Iso8601.write(startedAt), "endedAt" to endedAt?.let(Iso8601::write),
         "lines" to lines.map { it.toJson() }, "hasAudio" to hasAudio, "notes" to notes?.toJson(), "renamed" to renamed,
         "voiceNames" to voiceNames, "voiceGuesses" to voiceGuesses?.mapValues { it.value.toJson() },
@@ -102,7 +105,11 @@ class Session(
             voiceGuesses = o["voiceGuesses"].obj()?.mapValues { VoiceGuess.from(it.value.obj() ?: emptyMap()) },
             sourceFile = o["sourceFile"].str(), sourcePath = o["sourcePath"].str(),
             importing = o["importing"].bool(), room = o["room"].bool(),
+            extra = o.filterKeys { it !in KEYS },
         )
+
+        private val KEYS = setOf("id", "title", "startedAt", "endedAt", "lines", "hasAudio", "notes", "renamed",
+            "voiceNames", "voiceGuesses", "sourceFile", "sourcePath", "importing", "room")
 
         fun read(text: String): Session? = Json.parseObject(text)?.let(::from)
     }

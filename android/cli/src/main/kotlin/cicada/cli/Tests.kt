@@ -25,6 +25,7 @@ object Tests {
             "todoOwnersShowInTheUiLanguage" to ::todoOwnersShowInTheUiLanguage,
             "readsAMacRecordAndWritesItBackByteForByte" to ::readsAMacRecord,
             "keepsTheMacsImportAndRoomFields" to ::keepsTheMacsImportAndRoomFields,
+            "keepsFieldsItDoesNotKnow" to ::keepsFieldsItDoesNotKnow,
             "jsonEdgeCases" to ::jsonEdgeCases,
             "findsTheNewestAndroidRelease" to ::findsTheNewestAndroidRelease,
             "updateCheckIsSilentAndDue" to ::updateCheckIsSilentAndDue,
@@ -211,6 +212,17 @@ object Tests {
         equal(mac, Json.write(s.toJson()), "written back byte for byte")
         val untitled = Session.read(mac.replace("\"title\" : \"标题\",\n", ""))!!
         equal("周会", SessionStore.displayTitle(untitled), "an imported file is known by its name until the notes name it")
+    }
+
+    /// The Mac's voiceprint library (1.10) adds voiceProfiles / voiceSuggestions; Android has no
+    /// such library but must not drop them when it saves the record again.
+    fun keepsFieldsItDoesNotKnow() {
+        val ref = "{\n    \"1\" : {\n      \"id\" : \"6F9619FF-8B86-D011-B42D-00C04FC964FF\",\n      \"name\" : \"Emma\",\n      \"similarity\" : 0.75\n    }\n  }"
+        // Sorted keys: both come after voiceNames, the last key of MAC.
+        val mac = MAC.removeSuffix("\n}") + ",\n  \"voiceProfiles\" : $ref,\n  \"voiceSuggestions\" : $ref\n}"
+        check(mac.contains("\"voiceProfiles\"") && mac.contains("\"voiceSuggestions\""), "test record has the fields")
+        val s = Session.read(mac)!!
+        equal(mac, Json.write(s.toJson()), "written back byte for byte")
     }
 
     fun renamesLikeTheMac() {
