@@ -13,6 +13,11 @@ struct SpeakerProfile: Codable, Identifiable, Equatable {
     var lastSeenAt: Date?
     /// When the user agreed to keep this voice. Absent for a profile made before this field existed.
     var consentAt: Date?
+    /// Notes the user keeps about this person: company, role, what to remember.
+    var notes: String? = nil
+    /// A local communication-style summary (from what they said, not a psychological test).
+    var style: String? = nil
+    var styleUpdatedAt: Date? = nil
 }
 
 /// What a meeting remembers about a local voice id: enough to show the name even if the global
@@ -188,6 +193,33 @@ final class SpeakerProfileStore: @unchecked Sendable {
         mutate { profiles in
             guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
             profiles[i].name = clean
+            profiles[i].updatedAt = date
+            updated = true
+        }
+        return updated
+    }
+
+    @discardableResult
+    func setNotes(id: UUID, _ notes: String, at date: Date = Date()) -> Bool {
+        var updated = false
+        mutate { profiles in
+            guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
+            let clean = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            profiles[i].notes = clean.isEmpty ? nil : String(clean.prefix(2000))
+            profiles[i].updatedAt = date
+            updated = true
+        }
+        return updated
+    }
+
+    @discardableResult
+    func setStyle(id: UUID, _ style: String, at date: Date = Date()) -> Bool {
+        var updated = false
+        mutate { profiles in
+            guard let i = profiles.firstIndex(where: { $0.id == id }) else { return }
+            let clean = style.trimmingCharacters(in: .whitespacesAndNewlines)
+            profiles[i].style = clean.isEmpty ? nil : String(clean.prefix(2000))
+            profiles[i].styleUpdatedAt = date
             profiles[i].updatedAt = date
             updated = true
         }

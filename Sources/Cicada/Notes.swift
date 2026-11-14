@@ -213,6 +213,13 @@ final class NotesEngine: ObservableObject {
         Task { await update(id, final: false) }
     }
 
+    /// A hand edit in the notes window: keep the editor's text, not the next AI pass's copy.
+    func applyEdited(_ edited: MeetingNotes, id: String) {
+        guard shownID == id else { return }
+        notes = edited
+        objectWillChange.send()
+    }
+
     /// Show a stored meeting's notes (the window shows the live meeting when there is one).
     func show(_ id: String) {
         shownID = id

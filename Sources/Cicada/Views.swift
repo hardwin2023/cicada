@@ -1201,6 +1201,10 @@ struct MainWindowView: View {
                 .buttonStyle(.plain)
                 .help(showQuotes ? L("收起原话") : L("在纪要旁显示原话"))
             }
+            // Edit the notes, names and terms by hand (not while the meeting is being written).
+            if active == "notes", let notes = (s.id == store.liveID ? model.notes.notes : s.notes), !notes.isEmpty {
+                NotesEditButton(model: model, session: s)
+            }
             // Not while the meeting is still going, nor before an import has its text.
             Button { sharing = s } label: {
                 Text("分享…").font(.system(size: 13)).foregroundStyle(Palette.secondary)
@@ -1513,6 +1517,23 @@ struct MainWindowView: View {
                         .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
                         .help(L("这句是谁说的"))
                     } else if let speaker { SpeakerTag(number: speaker) }
+                    else if let s = shownSession, let v = l.voice {
+                        // A one-to-one call (or a voice not on show yet): make 对方 clickable to name.
+                        Menu {
+                            Button(L("标记人名…")) { model.promptSpeakerName(session: s.id, voice: v) }
+                            if model.settings.speakerMemory, s.id != model.store.liveID {
+                                Button(L("记住这个声音…")) { model.rememberSpeaker(session: s.id, voice: v) }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text("对方").font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.secondary)
+                                Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold)).foregroundStyle(Palette.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .help(L("标记这个人叫什么"))
+                    }
                     else if shownSession?.sourceFile == nil {
                         // An imported file has no "other side": its lines carry no label.
                         if me { MeTag() } else {

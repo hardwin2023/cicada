@@ -748,7 +748,7 @@ struct SettingsView: View {
                     Toggle("记住说话人", isOn: $settings.speakerMemory)
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).tint(Palette.ink)
                 }
-                SettingsRow(title: L("声纹库"), detail: L("\(model.speakerProfiles.count) 个人")) {
+                SettingsRow(title: L("人员库"), detail: L("\(model.speakerProfiles.count) 个人 · 声纹和备注")) {
                     SoftButton(L("管理")) { model.speakerLibraryShown = true }
                 }
                 SettingsRow(title: L("记录文件夹"), divider: false) {
