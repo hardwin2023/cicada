@@ -156,7 +156,7 @@ class DebugReceiver : BroadcastReceiver() {
                 val pcm = Wav.read(File(app.filesDir, name).inputStream())
                 app.background.execute {
                     when (val r = VoiceReference.check(app.translator, pcm, app.settings.targetCode)) {
-                        is VoiceReference.Check.Ok -> app.main.post { Log.d("debug: voiceref saved=${app.saveVoiceReference(pcm, r.text, lang)}") }
+                        is VoiceReference.Check.Ok -> app.main.post { Log.d("debug: voiceref saved=${app.saveVoiceReference(r.pcm, r.text, lang)}") }
                         is VoiceReference.Check.Again -> Log.d("debug: voiceref refused: ${Strings.LF(r.reason, *r.args.toTypedArray())}")
                     }
                 }

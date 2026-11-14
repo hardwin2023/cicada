@@ -196,7 +196,8 @@ class VoiceRecordActivity : Activity() {
             app.main.post {
                 if (isDestroyed) return@post
                 when (result) {
-                    is VoiceReference.Check.Ok -> { transcript = result.text; phase = Phase.Ready }
+                    // The trimmed clip is what's tried and kept, and its length is what's shown.
+                    is VoiceReference.Check.Ok -> { transcript = result.text; pcm = result.pcm; seconds = pcm.size / Segmenter.RATE.toDouble(); phase = Phase.Ready }
                     is VoiceReference.Check.Again -> { problem = Strings.LF(result.reason, *result.args.toTypedArray()); phase = Phase.Failed }
                 }
                 build()

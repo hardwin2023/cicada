@@ -18,7 +18,22 @@ object VoiceTests {
         "cloneRecordingIsKeptPrivatelyAndRemoved" to ::storage,
         "clonePaceIsTheMacs" to ::pace,
         "cloneRecordingIsCheckedLikeTheMac" to ::checkRecording,
+        "cloneQuietAtTheEndsIsTrimmed" to ::trimmed,
     )
+
+    fun trimmed() {
+        val rate = Segmenter.RATE
+        // 1 s before, 12 s of reading, 1.5 s after (the pause before 读完了).
+        val clip = tone(12.0, pad = 0.0).let { ShortArray(rate) + it + ShortArray(rate * 3 / 2) }
+        val t = VoiceReference.trim(clip)
+        check(kotlin.math.abs(t.size / rate.toDouble() - 12.4) < 0.05, "12 s and 0.2 s each side, got ${t.size / rate.toDouble()}")
+        equal(clip.copyOfRange(rate - rate / 5, rate - rate / 5 + 100).toList(), t.copyOfRange(0, 100).toList(), "starts 0.2 s before the reading")
+        equal(0.toShort(), t.last(), "ends in the kept quiet")
+        val tight = tone(5.0, pad = 0.0)
+        equal(tight.size, VoiceReference.trim(tight).size, "nothing to trim")
+        val silent = ShortArray(rate)
+        equal(silent.size, VoiceReference.trim(silent).size, "silence is left as it is")
+    }
 
     private class Fake(val reply: String = "{}") : Transport {
         val streamed = mutableListOf<Pair<String, Int>>()
@@ -120,7 +135,10 @@ object VoiceTests {
         equal(VoiceReference.Check.Again("读得有点慢，克隆的声音也会这么慢。请用平时说话的语速再录一次"), slow, "slow")
         val passage = "大家好，我是这次会议的主持人。今天我们主要讨论新产品的上线计划，包括时间安排、测试范围和市场推广。"
         val ok = VoiceReference.check(Translator(client(heard(passage), AppSettings())), tone(11.0), "zh-CN")
-        equal(VoiceReference.Check.Ok(passage), ok, "heard at an ordinary pace")
+        equal(VoiceReference.Check.Ok(passage, VoiceReference.trim(tone(11.0))), ok, "heard at an ordinary pace, the trimmed clip kept")
+        // 9.5 s of reading padded to 15 s by pauses: the reading is what counts.
+        val padded = VoiceReference.check(Translator(client(heard(passage), AppSettings())), tone(9.5, pad = 2.75), "zh-CN")
+        equal(VoiceReference.Check.Again("录音太短了，请至少朗读 %lld 秒", listOf(10)), padded, "pauses don't count")
         val none = VoiceReference.check(Translator(client(heard("嗯"), AppSettings())), tone(11.0), "zh-CN")
         equal(VoiceReference.Check.Again("没听清录音内容，请换个安静的地方再录一次"), none, "nothing heard")
     }

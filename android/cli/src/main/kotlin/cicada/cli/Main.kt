@@ -122,7 +122,12 @@ fun main(argv: Array<String>) {
             val reference = opt("--reference", "").ifEmpty { null }?.let { path ->
                 val pcm = Wav.read(File(path).inputStream())
                 when (val r = VoiceReference.check(Translator(ling), pcm, opt("--own", "zh-CN"))) {
-                    is VoiceReference.Check.Ok -> { println("reference: %.1f s, heard %d characters".format(pcm.size / 16000.0, r.text.length)); "data:audio/wav;base64," + java.util.Base64.getEncoder().encodeToString(Wav.bytes(pcm)) to r.text }
+                    is VoiceReference.Check.Ok -> {
+                        // What 用这个声音 keeps: the trimmed clip, written and read back as the app does.
+                        println("reference: %.1f s recorded, %.1f s kept, heard %d characters".format(pcm.size / 16000.0, r.pcm.size / 16000.0, r.text.length))
+                        VoiceReference.save(r.pcm, r.text)
+                        VoiceReference.reference()!!
+                    }
                     is VoiceReference.Check.Again -> { println("reference refused: ${Strings.LF(r.reason, *r.args.toTypedArray())}"); exitProcess(1) }
                 }
             }

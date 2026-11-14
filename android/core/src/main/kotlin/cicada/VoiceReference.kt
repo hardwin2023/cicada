@@ -75,6 +75,25 @@ object VoiceReference {
 
     /// Seconds from the first to the last 20 ms window within 35 dB of the loudest one.
     fun speechSpan(samples: ShortArray, rate: Int = Segmenter.RATE): Double? {
+        val (first, last, size) = speechWindows(samples, rate) ?: return null
+        return (last - first + 1) * size.toDouble() / rate
+    }
+
+    /// Quiet kept before and after the reading by `trim`.
+    const val TRIM_PAD = 0.2
+
+    /// The recording without the quiet before and after the reading, 0.2 s kept each side (the
+    /// Linux port's trim). Ming copies the clip's ending: a second of silence after the last word
+    /// (the pause before 读完了) cut every cloned sentence short (measured 2026-11 against Ling:
+    /// 1.9 s of speech instead of 3.6 s for the same line).
+    fun trim(samples: ShortArray, rate: Int = Segmenter.RATE): ShortArray {
+        val (first, last, size) = speechWindows(samples, rate) ?: return samples
+        val pad = (TRIM_PAD * rate).toInt()
+        return samples.copyOfRange(maxOf(0, first * size - pad), minOf(samples.size, (last + 1) * size + pad))
+    }
+
+    /// The first and last 20 ms window within 35 dB of the loudest one, and the window's length.
+    private fun speechWindows(samples: ShortArray, rate: Int): Triple<Int, Int, Int>? {
         val size = maxOf(1, (rate * 0.02).toInt())
         val levels = ArrayList<Double>()
         var i = 0
@@ -91,7 +110,7 @@ object VoiceReference {
         val first = levels.indexOfFirst { it >= floor }
         val last = levels.indexOfLast { it >= floor }
         if (first < 0) return null
-        return (last - first + 1) * size.toDouble() / rate
+        return Triple(first, last, size)
     }
 
     /// Characters or words a second, silence at both ends left out; null when there is no speech.
@@ -128,14 +147,20 @@ object VoiceReference {
     }
 
     /// What the recording says, as the service hears it (the Mac transcribes on the device; the
-    /// phone has Ming), then checked as the Mac checks it. Returns the text, or the reason to
-    /// record again (a Chinese UI key).
+    /// phone has Ming), then checked as the Mac checks it. Returns the text and the trimmed clip
+    /// to keep, or the reason to record again (a Chinese UI key). The 10 s are the reading's,
+    /// silence at the ends left out.
     sealed class Check {
-        data class Ok(val text: String) : Check()
+        class Ok(val text: String, val pcm: ShortArray) : Check() {
+            override fun equals(other: Any?) = other is Ok && other.text == text && other.pcm.contentEquals(pcm)
+            override fun hashCode() = text.hashCode()
+            override fun toString() = "Ok($text, ${pcm.size} samples)"
+        }
         data class Again(val reason: String, val args: List<Any> = emptyList()) : Check()
     }
 
-    fun check(translator: Translator, pcm: ShortArray, own: String): Check {
+    fun check(translator: Translator, recorded: ShortArray, own: String): Check {
+        val pcm = trim(recorded)
         val seconds = pcm.size / Segmenter.RATE.toDouble()
         if (seconds < MIN_SECONDS) return Check.Again("录音太短了，请至少朗读 %lld 秒", listOf(MIN_SECONDS.toInt()))
         val other = if (VoiceCatalog.key(own) == "en") "zh-CN" else "en"
@@ -145,6 +170,6 @@ object VoiceReference {
         val pace = pace(text, pcm)
         Log.d("voice clone: ${text.length} chars, pace ${pace?.let { "%.1f".format(it) } ?: "-"}/s")
         if (pace != null && isSlow(text, pace)) return Check.Again("读得有点慢，克隆的声音也会这么慢。请用平时说话的语速再录一次")
-        return Check.Ok(text)
+        return Check.Ok(text, pcm)
     }
 }
