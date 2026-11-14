@@ -9,10 +9,11 @@ class Segment(val index: Int, val start: Double, val samples: ShortArray) {
 /// Cuts the audio into stretches of speech by loudness alone: a pause of 0.6 s ends one, and one
 /// that runs to 8 s is cut at its quietest moment in the last 2 s, so a word is split as rarely as
 /// possible (Ming has no word timings to put it back together). Not thread-safe: fed from the
-/// listening worker only. Same numbers as the Windows Segmenter. (A meeting's first stretch was once
+/// listening worker only. Same numbers as the Windows Segmenter. 面对面 gives it a VoiceGate: a
+/// phone's mic hears a voice across the table well under -40 dBFS. (A meeting's first stretch was once
 /// cut at 4 s to show a line sooner: Ming then finished the cut sentence by itself, and the rest
 /// came back as a second, duplicate line.)
-class Segmenter {
+class Segmenter(private val gate: VoiceGate? = null) {
     companion object {
         const val RATE = 16000
         private const val FRAME = 480 // 30 ms
@@ -54,6 +55,8 @@ class Segmenter {
     private var quietFrames = 0
     private var loudFrames = 0
     private var index = 0
+    /// The level that counts as speech for this frame: the gate's when there is one.
+    private var line = threshold
 
     var onSegment: ((Segment) -> Unit)? = null
 
@@ -72,9 +75,16 @@ class Segmenter {
 
     /// Whether the frame holds speech: sound that has lasted 30 ms, judged in 10 ms steps against the
     /// line, so a lone key click (a few ms) neither opens a segment nor breaks the pause that ends one
-    /// (VoiceActivity.swift's onset); the pre-roll then reaches back to where that sound began.
-    private fun isSpeech(frame: ShortArray): Boolean {
-        val line = threshold
+    /// (VoiceActivity.swift's onset); the pre-roll then reaches back to where that sound began. A
+    /// room's gate learns its noise per frame and takes whole ones, as the Mac's does per block: a
+    /// voiced 30 ms frame has lasted the onset already.
+    private fun isSpeech(frame: ShortArray, level: Double): Boolean {
+        gate?.let { g ->
+            val on = g.voiced(level, FRAME / RATE.toDouble())
+            sounding = if (on) sounding + FRAME / STEP else 0
+            carried = false
+            return on
+        }
         var said = false
         var early = sounding > 0
         var i = 0
@@ -93,7 +103,8 @@ class Segmenter {
     private fun step(frame: ShortArray) {
         val level = Wav.rms(frame)
         val high = high(frame)
-        val loud = isSpeech(frame)
+        line = gate?.threshold ?: threshold
+        val loud = isSpeech(frame, level)
         val now = consumed / RATE.toDouble()
         consumed += frame.size
 
@@ -146,13 +157,13 @@ class Segmenter {
     /// through more often than before (about 1 in 3 segments, was 1 in 5); what Ming makes of it
     /// still meets the hear filter (Translator.isNoise).
     internal fun isSteady(frameLevels: List<Double>): Boolean {
-        val first = frameLevels.indexOfFirst { it >= threshold }
-        val last = frameLevels.indexOfLast { it >= threshold }
+        val first = frameLevels.indexOfFirst { it >= line }
+        val last = frameLevels.indexOfLast { it >= line }
         if (first < 0 || last <= first) return false
         val body = frameLevels.subList(first, last + 1)
-        val top = body.map { maxOf(it, threshold) }.sorted()
+        val top = body.map { maxOf(it, line) }.sorted()
         if (top[(0.9 * (top.size - 1)).toInt()] >= steady * top[(0.1 * (top.size - 1)).toInt()]) return false
-        val low = body.map { maxOf(it, threshold / 8) }.sorted()
+        val low = body.map { maxOf(it, line / 8) }.sorted()
         return low[(0.5 * (low.size - 1)).toInt()] < dips * low[(0.1 * (low.size - 1)).toInt()]
     }
 
@@ -173,10 +184,10 @@ class Segmenter {
     /// morning everyone." at 7.5 to 11.4 dB depending on where the frames fell, so it came and
     /// went with a few ms of lead-in; 10 ms steps and their 5th percentile give it 14.6 to 16.5.
     internal fun isWord(frameLevels: List<Double>): Boolean {
-        val first = frameLevels.indexOfFirst { it >= threshold }
-        val last = frameLevels.indexOfLast { it >= threshold }
+        val first = frameLevels.indexOfFirst { it >= line }
+        val last = frameLevels.indexOfLast { it >= line }
         if (first < 0 || (last - first + 1) * FRAME > short * RATE) return false
-        val quiet = threshold / 4
+        val quiet = line / 4
         val q = lead ?: return false
         if (q > quiet || last + 1 >= frameLevels.size || frameLevels.subList(last + 1, frameLevels.size).minOrNull()!! > quiet) return false
         val samples = current.slice(0, current.size)
@@ -191,7 +202,7 @@ class Segmenter {
         val rise = minOf(quiet, steps.max() / fade)
         val from = steps.indexOfFirst { it >= rise }
         val to = steps.indexOfLast { it >= rise }
-        val body = steps.subList(from, to + 1).map { maxOf(it, threshold / 8) }.sorted()
+        val body = steps.subList(from, to + 1).map { maxOf(it, line / 8) }.sorted()
         val low = maxOf(2, (0.05 * (body.size - 1)).toInt())
         return low < body.size && body[(0.9 * (body.size - 1)).toInt()] >= swell * body[low] && isVoiced(frameLevels, samples)
     }
@@ -238,7 +249,7 @@ class Segmenter {
     internal fun isRumble(frameLevels: List<Double>, frameHighs: List<Double>): Boolean {
         var full = 0.0; var above = 0.0
         for (i in 0 until minOf(frameLevels.size, frameHighs.size)) {
-            if (frameLevels[i] < threshold) continue
+            if (frameLevels[i] < line) continue
             full += frameLevels[i] * frameLevels[i]
             above += frameHighs[i] * frameHighs[i]
         }
@@ -255,7 +266,7 @@ class Segmenter {
         val restSpeech = ArrayList(speech.subList(minOf(speech.size, end / FRAME), speech.size))
         val start = currentStart
         val sent = ArrayList(levels.subList(0, minOf(levels.size, end / FRAME)))
-        val said = if (isWord(levels)) sent.count { it >= threshold / 4 } * FRAME >= minWord * RATE
+        val said = if (isWord(levels)) sent.count { it >= line / 4 } * FRAME >= minWord * RATE
             else loudFrames * FRAME >= minSpeech * RATE && !isSteady(sent)
         val heard = said && !isRumble(sent, ArrayList(highs.subList(0, sent.size)))
         current.clear(); levels.clear(); highs.clear(); speech.clear()
@@ -275,6 +286,41 @@ class Segmenter {
             quietFrames = trailing
             loudFrames = speech.count { it }
         }
+    }
+}
+
+/// 面对面: where speech starts follows the room. The Mac's VoiceGate (RoomMic.swift) and Windows':
+/// twice the room's noise, between -56 and -40 dBFS, the noise being the quietest moment of each
+/// second (the gaps between words, even while people talk on and on), taken low over the last half
+/// minute. A phone's VOICE_RECOGNITION input has no gain control, so a voice a metre away comes in
+/// around -50 dBFS and a fixed -40 dBFS line never opened once (#30).
+class VoiceGate {
+    companion object {
+        const val FIXED = 0.01
+        const val LOWEST = 0.0015
+    }
+    private val quietest = ArrayDeque<Double>()
+    private var second = Double.POSITIVE_INFINITY
+    private var elapsed = 0.0
+
+    val threshold: Double get() {
+        if (quietest.size < 3) return 0.004
+        val floor = quietest.sorted()[quietest.size / 5]
+        return minOf(FIXED, maxOf(LOWEST, floor * 2))
+    }
+
+    /// Takes one frame's level and length; true when it is over the line.
+    fun voiced(rms: Double, seconds: Double): Boolean {
+        val on = rms >= threshold
+        second = minOf(second, rms)
+        elapsed += seconds
+        if (elapsed >= 1 - 1e-9) {
+            quietest.addLast(second)
+            if (quietest.size > 30) quietest.removeFirst()
+            second = Double.POSITIVE_INFINITY
+            elapsed = 0.0
+        }
+        return on
     }
 }
 

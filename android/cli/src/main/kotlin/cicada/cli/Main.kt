@@ -1,13 +1,13 @@
 // cicada-cli: the Android engines without Android (scripts/cli.sh runs it).
 //
 //   cicada-cli test                       the unit tests (no network)
-//   cicada-cli listen <file.wav> [--target zh-CN] [--speed 1|0] [--notes] [--log]
+//   cicada-cli listen <file.wav> [--target zh-CN] [--speed 1|0] [--notes] [--log] [--room]
 //       Plays the file into ListenEngine as if the phone were playing it, prints each line as it
 //       is recorded, then the record's folder. --notes waits for the final notes and prints them.
 //   cicada-cli hear <file.wav> [--target zh-CN]   one file to the hear model (Ming on Ling), raw reply printed
 //   cicada-cli say <file.wav> [--to en] [--out said.wav]
 //       我说 · 面对面: what I say heard and translated, then read by the service's voice into a WAV
-//   cicada-cli segments <file.wav>        where the segmenter cuts
+//   cicada-cli segments <file.wav> [--room]  where the segmenter cuts (--room: 面对面's gate)
 //   cicada-cli roundtrip <session.json>…  reads and writes records, says if a byte changed
 //
 //   --provider ling|openrouter|zenmux   the AI service (default ling), with its recommended models;
@@ -54,7 +54,7 @@ fun main(argv: Array<String>) {
         "segments" -> {
             val pcm = Wav.read(File(args[1]).inputStream())
             val list = mutableListOf<Segment>()
-            val seg = Segmenter().apply { onSegment = { list.add(it) } }
+            val seg = Segmenter(if ("--room" in args) VoiceGate() else null).apply { onSegment = { list.add(it) } }
             var i = 0
             while (i < pcm.size) { seg.feed(pcm.copyOfRange(i, minOf(pcm.size, i + 1600))); i += 1600 }
             seg.flush()
@@ -135,7 +135,7 @@ fun main(argv: Array<String>) {
             val ended = java.util.concurrent.CountDownLatch(1)
             val source = PcmAudioSource(File(args[1]), opt("--speed", "1").toDouble())
             source.onEnded = { ended.countDown() }
-            engine.start(source, "file")
+            engine.start(source, if ("--room" in args) "mic" else "file")
             ended.await()
             Thread.sleep(1500)
             engine.stop()

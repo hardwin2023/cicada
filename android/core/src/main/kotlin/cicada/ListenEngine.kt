@@ -179,7 +179,8 @@ class ListenEngine(
         notes.begin(session.id)
         speakers?.reset()
         fixes?.meetingStarted()
-        val segmenter = Segmenter()
+        // 面对面: the line follows the room, as the Mac's and Windows' room mic do.
+        val segmenter = Segmenter(if (kind == "mic") VoiceGate() else null)
         segmenter.onSegment = ::send
         val queue = LinkedBlockingQueue<ShortArray>()
         audio = queue
