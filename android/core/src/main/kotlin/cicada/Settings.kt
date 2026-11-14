@@ -50,6 +50,9 @@ class AppSettings(
     var recordAudio: Boolean = true,
     /// 把我说的翻译给对方: 按住说话 in 面对面 (the Mac's 同声传译 switch).
     var speakBack: Boolean = true,
+    /// 读出来的声音 per language key ("en", "zh"), as the Mac's speakVoices: "ming:US_Emma",
+    /// "cloud:Kore", "phone". A language not in it uses VoiceCatalog.defaultId.
+    var speakVoices: MutableMap<String, String> = mutableMapOf(),
     /// 会中改正听错的词: finished sentences carry the word list to the AI service, which points out
     /// misheard words (Correction). On by default; does nothing without an AI service.
     var fixMisheard: Boolean = true,
@@ -91,7 +94,7 @@ class AppSettings(
         "showInCapture" to showInCapture, "onboarded" to onboarded, "uiLanguage" to uiLanguage,
         "source" to source, "overlay" to overlay, "silenceEnd" to silenceEnd, "silenceMinutes" to silenceMinutes,
         "speakerVoices" to speakerVoices, "recordAudio" to recordAudio, "speakBack" to speakBack,
-        "fixMisheard" to fixMisheard, "askNames" to askNames,
+        "speakVoices" to speakVoices.toSortedMap(), "fixMisheard" to fixMisheard, "askNames" to askNames,
         "exportOn" to exportOn, "exportFolder" to exportFolder, "exportName" to exportName,
         "updateLastChecked" to updateLastChecked, "updateNotified" to updateNotified,
     )
@@ -129,7 +132,7 @@ class AppSettings(
                             silenceEnd = o["silenceEnd"].str() ?: d.silenceEnd,
                             silenceMinutes = (o["silenceMinutes"] as? Number)?.toDouble() ?: d.silenceMinutes,
                             speakerVoices = o["speakerVoices"].bool() ?: true, recordAudio = o["recordAudio"].bool() ?: true,
-                            speakBack = o["speakBack"].bool() ?: true,
+                            speakBack = o["speakBack"].bool() ?: true, speakVoices = strings(o["speakVoices"]),
                             fixMisheard = o["fixMisheard"].bool() ?: true, askNames = o["askNames"].bool() ?: true,
                             exportOn = o["exportOn"].bool() ?: false, exportFolder = o["exportFolder"].str() ?: "",
                             exportName = o["exportName"].str() ?: "",

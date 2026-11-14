@@ -8,6 +8,7 @@ import cicada.SilentAudioSource
 import cicada.Strings
 import cicada.Log
 import cicada.Session
+import cicada.VoiceCatalog
 import cicada.Wav
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -23,6 +24,7 @@ import java.util.concurrent.TimeUnit
 ///   provider ling|openrouter|zenmux|custom | ai-model hear|text|voice|notes <id> ("" back to the recommended) | show ai
 ///   ai-base <url> (the custom service's address) · ai-notes same|own · ai-notes-base <url> · notes-key import <file in files/>|remove (the custom service's 纪要)
 ///   key import <file in files/> (sealed as the current service's key, the plain file deleted) | voice-try (设置's 试一句)
+///   voice <lang>[=<id>] (读出来的声音: choose, or say it and the options) · voice-preview <lang> [<id>] (试听) · show voices [lang]
 ///   ai-check (重新检查) | ai-check-sim <reason|lowBalance|off> (every check ends that way; the state's ai.check has the steps)
 ///   改正听错的词: fixes on|off · asknames on|off · silent (a meeting with no audio) · heard <text> · vocab add|remove|state
 ///   fixstate · fixanswer yes|no · fixrevert <line> · fixlater · fixundo · fixedit <line>=<text>[|one][|keep0] · pinyin <text>
@@ -129,9 +131,24 @@ class DebugReceiver : BroadcastReceiver() {
             }
             // 语音和文字只发给你的服务 (the Mac's aiCustomOnly:on|off): `ai-custom-only on|off`.
             "ai-custom-only" -> { app.setCustomOnly(arg == "on"); return mapOf("ok" to true, "ai" to ai(app)) }
-            "voice-try" -> app.background.execute {
-                val r = app.voice.speakCloud(app.ling, "Could you send the revised quote by Friday? We can sign next week.", {}, {})
-                Log.d("debug: voice-try -> $r")
+            "voice-try" -> { app.previewVoice(app.voiceId("en"), "en", SettingsActivity.SAMPLE) { Log.d("debug: voice-try failed") }; return mapOf("voice" to app.voiceId("en")) }
+            // 读出来的声音: `voice <lang>=<id>` chooses (en=ming:UK_George, zh=phone; en= back to the
+            // default), `voice <lang>` says what it is and what's offered; `voice-preview <lang> <id>` is 试听.
+            "voice" -> {
+                val lang = arg.substringBefore('=')
+                if ('=' in arg) {
+                    val id = arg.substringAfter('=')
+                    if (id.isEmpty()) app.settings.speakVoices.remove(VoiceCatalog.key(lang)) else app.settings.speakVoices[VoiceCatalog.key(lang)] = id
+                    app.saveSettings()
+                }
+                return mapOf("lang" to lang, "voice" to app.voiceId(lang), "options" to VoiceCatalog.options(lang, app.ling.config()).map { it.id })
+            }
+            "voice-preview" -> {
+                val words = arg.split(Regex("\\s+"), 2)
+                val lang = words[0].ifEmpty { "en" }
+                val id = words.getOrNull(1) ?: app.voiceId(lang)
+                app.previewVoice(id, lang) { Log.d("debug: preview failed $it") }
+                return mapOf("previewing" to id)
             }
             // 检查更新 against a test feed: the dev build checks only once one is set.
             "updatefeed" -> { app.updates.setFeed(if (arg.isEmpty() || arg.contains("://")) arg else File(app.filesDir, arg).path); app.updates.checkIfDue(0) }
@@ -240,6 +257,7 @@ class DebugReceiver : BroadcastReceiver() {
                 "settings" -> open(SettingsActivity::class.java)
                 "words" -> open(WordListActivity::class.java)
                 "ai" -> open(AiServiceActivity::class.java)
+                "voices" -> open(VoicesActivity::class.java, arg.substringAfter(' ', "").ifEmpty { null })
                 "onboarding" -> open(OnboardingActivity::class.java)
                 "record" -> open(RecordActivity::class.java, arg.substringAfter(' ', "").ifEmpty { app.store.all().firstOrNull { it.id != app.listen.sessionId || !app.listen.listening }?.id })
                 "records" -> open(RecordsActivity::class.java)

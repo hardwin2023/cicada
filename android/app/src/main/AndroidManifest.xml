@@ -48,6 +48,7 @@
         <activity android:name=".RecordActivity" android:exported="false" android:parentActivityName=".MainActivity" />
         <activity android:name=".SettingsActivity" android:exported="false" android:parentActivityName=".MainActivity" />
         <activity android:name=".AiServiceActivity" android:exported="false" android:parentActivityName=".SettingsActivity" />
+        <activity android:name=".VoicesActivity" android:exported="false" android:parentActivityName=".SettingsActivity" />
         <activity android:name=".WordListActivity" android:exported="false" android:parentActivityName=".SettingsActivity" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".OnboardingActivity" android:exported="false" />
         <!-- 导入录音或视频: from 首页, or another app's share sheet (分享到知了). -->

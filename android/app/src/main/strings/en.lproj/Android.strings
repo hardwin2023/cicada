@@ -226,3 +226,8 @@
 "最多 %lld 个，满了优先用最近的。只存在这台手机上" = "Up to %lld, recent ones first. Stored only on this phone";
 "点一下改写法" = "Tap to change the spelling";
 "重新选" = "Choose again";
+"读出来的声音" = "Voice they hear";
+"手机的声音" = "Phone voice";
+"Ling 不可用时自动换成手机的声音" = "Falls back to the phone's voice when Ling is unavailable";
+"%@ 用不了时，自动换手机的声音" = "Falls back to the phone's voice if %@ is unavailable";
+"这个服务不出声音，用手机的声音" = "This service has no voice; using the phone's voice";

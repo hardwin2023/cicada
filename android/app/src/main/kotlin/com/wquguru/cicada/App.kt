@@ -29,6 +29,7 @@ import cicada.SpeakerNamer
 import cicada.SpeakerTagger
 import cicada.Strings
 import cicada.Translator
+import cicada.VoiceCatalog
 import cicada.Wav
 import java.io.File
 import java.util.Locale
@@ -253,22 +254,60 @@ class CicadaApp : Application() {
 
     fun releaseToSay() = listen.release()
 
+    /// 读出来的声音 for a language: the one chosen in settings, or its default (VoiceCatalog.chosen).
+    fun voiceId(lang: String): String = VoiceCatalog.chosen(settings.speakVoices, lang, ling.config(), ling.speaks)
+
+    /// The service's voice name and Ming's language_id for a voice id (not the phone's).
+    private fun cloudArgs(id: String, lang: String): Pair<String, String?> =
+        if (id.startsWith(VoiceCatalog.MING)) id.removePrefix(VoiceCatalog.MING) to VoiceCatalog.mingLanguage(lang)
+        else id.removePrefix(VoiceCatalog.CLOUD) to null
+
     /// My words in their language, out of the phone's speaker. The mic is muted for the segmenter
     /// meanwhile (and a beat after, for the room's echo) so the phone doesn't hear itself as them.
-    /// Another AI service with a voice model reads them in its voice (Gemini on OpenRouter and
-    /// ZenMux); Ling and the rest use the phone's, and so does a cloud voice that fails.
+    /// The voice chosen for their language reads them (Ming's on Ling, Gemini's on OpenRouter and
+    /// ZenMux); the phone's reads them when that is the choice, and when a service's voice fails.
     private fun speakAloud(text: String, lang: String) {
         listen.muted = true
         changed()
-        if (ling.speaks && !ling.config().isLing) {
+        val id = voiceId(lang)
+        if (id != VoiceCatalog.PHONE) {
             background.execute {
-                val r = voice.speakCloud(ling, text, onStart = { changed() }, onEnd = {})
+                val (name, language) = cloudArgs(id, lang)
+                val r = voice.speakCloud(ling, text, name, language, onStart = { changed() }, onEnd = {})
                 if (r == Voice.Result.Spoken) main.postDelayed({ if (!voice.speaking) { listen.muted = false; changed() } }, 400)
                 else speakWithPhone(text, lang)
             }
             return
         }
         speakWithPhone(text, lang)
+    }
+
+    /// The voice being tried (试听 / 试一句), shown as a spinner on its row.
+    @Volatile var previewing: String? = null; private set
+
+    /// Plays a voice on the speaker with a line in `lang` (the Mac's previewVoice); not a meeting
+    /// line, so nothing is muted. `failed` comes on the main thread with why nothing played.
+    fun previewVoice(id: String, lang: String, text: String = VoiceCatalog.sample(lang), failed: (String) -> Unit = {}) {
+        voice.stop()
+        previewing = id
+        changed()
+        fun done() = main.post { if (previewing == id) previewing = null; changed() }
+        if (id == VoiceCatalog.PHONE) {
+            background.execute {
+                val r = voice.speak(text, lang, onStart = {}, onEnd = { done() })
+                if (r != Voice.Result.Spoken) {
+                    done()
+                    main.post { failed(Strings.L(if (r == Voice.Result.NoVoice) "手机不会读这个语言" else "没能读出来")) }
+                }
+            }
+            return
+        }
+        background.execute {
+            val (name, language) = cloudArgs(id, lang)
+            val r = voice.speakCloud(ling, text, name, language, onStart = {}, onEnd = { done() })
+            Log.d("voice: preview $id $lang ${r.name}")
+            if (r != Voice.Result.Spoken) main.post { failed(Strings.L("没能读出来")) }
+        }
     }
 
     private fun speakWithPhone(text: String, lang: String) {
