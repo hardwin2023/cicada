@@ -1531,6 +1531,7 @@
 "写上名字后，这场记录会按这个名字显示。要下次自动认出，再点“记住这个声音”。" = "This meeting will show this name. To recognize them next time, also choose “Remember this voice”.";
 "请先确认对方知道。声纹只保存在这台 Mac，用于以后会议认出这个人，可随时在人员库里删除。" = "Make sure they know first. The voiceprint stays only on this Mac, is used to recognize this person in later meetings, and can be deleted from People anytime.";
 "编辑纪要" = "Edit Notes";
+"纪要标题" = "Notes title";
 "改完保存在这场会议里；人名和术语也会用于以后整理。" = "Saved with this meeting; names and terms are also used for later notes.";
 "名字写对后，纪要里所有人名会按这里显示；识别错的写法放在“听成”里。" = "Names in the notes follow the spelling here; put misheard spellings under “Heard as”.";
 "例如：季度产品评审" = "e.g. Quarterly product review";

@@ -25,7 +25,7 @@ struct NotesEditorView: View {
                 Spacer()
                 Button("取消") { dismiss() }.buttonStyle(.plain)
                     .font(.system(size: 13)).foregroundStyle(Palette.secondary)
-                SoftButton("保存", dark: true) { save() }
+                SoftButton(L("保存"), dark: true) { save() }
             }
             .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 14)
 
@@ -33,17 +33,17 @@ struct NotesEditorView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    field("纪要标题") {
+                    field(L("纪要标题")) {
                         TextField("例如：季度产品评审", text: optional(\.title))
                             .textFieldStyle(.roundedBorder)
                     }
 
-                    field("总结") {
+                    field(L("总结")) {
                         editor($draft.summary, height: 110)
                     }
 
                     if !draft.topics.isEmpty {
-                        section("议题")
+                        section(L("议题"))
                         ForEach(draft.topics.indices, id: \.self) { i in
                             VStack(alignment: .leading, spacing: 6) {
                                 TextField("议题标题", text: $draft.topics[i].title)
@@ -63,20 +63,20 @@ struct NotesEditorView: View {
                     }
 
                     if !draft.conclusions.isEmpty {
-                        section("结论")
+                        section(L("结论"))
                         ForEach(draft.conclusions.indices, id: \.self) { i in
-                            item($draft.conclusions[i], prefix: "结论")
+                            item($draft.conclusions[i], prefix: L("结论"))
                         }
                     }
                     if !draft.todos.isEmpty {
-                        section("待办")
+                        section(L("待办"))
                         ForEach(draft.todos.indices, id: \.self) { i in
-                            item($draft.todos[i], prefix: "待办")
+                            item($draft.todos[i], prefix: L("待办"))
                         }
                     }
 
                     if !draft.terms.isEmpty {
-                        section("人名和术语")
+                        section(L("人名和术语"))
                         Text("名字写对后，纪要里所有人名会按这里显示；识别错的写法放在“听成”里。")
                             .font(.system(size: 11)).foregroundStyle(Palette.tertiary)
                         ForEach(draft.terms.indices, id: \.self) { i in
