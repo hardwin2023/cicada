@@ -1510,8 +1510,17 @@ struct MainWindowView: View {
                 HStack(spacing: 6) {
                     if !label {
                     } else if voices, !me, let s = shownSession {
-                        // A click on whose line it is: say it was someone else's.
-                        Menu { assignMenu(s, l, SpeakerLabels.voiceNumbers(s)) } label: {
+                        // A click on whose line it is: say it was someone else's, or name the voice.
+                        Menu {
+                            if let v = l.voice {
+                                Button(L("标记人名…")) { model.promptSpeakerName(session: s.id, voice: v) }
+                                if model.settings.speakerMemory, s.id != model.store.liveID {
+                                    Button(L("记住这个声音…")) { model.rememberSpeaker(session: s.id, voice: v) }
+                                }
+                                Divider()
+                            }
+                            assignMenu(s, l, SpeakerLabels.voiceNumbers(s))
+                        } label: {
                             if let speaker { SpeakerTag(number: speaker) } else { UnknownSpeakerTag() }
                         }
                         .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
