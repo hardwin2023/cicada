@@ -2393,6 +2393,17 @@ final class AppModel: ObservableObject {
             if let img = r.nsImage, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: p[1]))
             }
+        case "peopleShow", "notesEditShow":
+            // peopleShow (设置 › 通用 › 人员库) and notesEditShow:<会议 id> (编辑纪要) in a window of
+            // their own, for `screencapture -l` (winall): sheets a synthetic click can't reach.
+            let view: AnyView = parts.first == "peopleShow"
+                ? AnyView(SpeakerLibraryView(model: self))
+                : AnyView(NotesEditorView(model: self, sessionID: arg))
+            let w = NSWindow(contentViewController: NSHostingController(rootView: view))
+            w.title = parts.first ?? ""
+            w.isReleasedWhenClosed = false
+            w.center()
+            w.makeKeyAndOrderFront(nil)
         case "windowsRender":
             // Every visible window as drawn (<dir>/<n>-<class>.png), without Screen Recording permission.
             for (i, w) in NSApp.windows.enumerated() where w.isVisible {
