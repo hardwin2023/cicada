@@ -5,6 +5,28 @@ writes it from the `feat:` and `fix:` commits since the last tag, grouped by pla
 scope), and the release workflow publishes it as the release notes. Since 1.1.2 every release ships
 every platform (one with nothing new says No changes); earlier ones shipped only those listed. Lines under `## Unreleased` become the release's summary. The Chinese changelog for users is `site/changelog.json`.
 
+## 1.10.1 — 2026-11-14
+
+### Mac
+
+No changes; released to keep every platform on the same version.
+
+### Windows
+
+#### Fixed
+
+- Listening to the PC reconnects after the audio service or a device resets, instead of recording silence ([95e45b9](https://github.com/wquguru/cicada/commit/95e45b99e115cd315c94eae83cbc1cdb3963d232))
+- A notice says why listening stopped, and a disconnected room mic shows as off ([058b233](https://github.com/wquguru/cicada/commit/058b233961be6814899d4c27fe165c2e2e564a7a))
+- An app allowed the microphone but never used no longer counts as in a call, so meetings end on their own ([663ef93](https://github.com/wquguru/cicada/commit/663ef932ab1ffc247ed4c3809beaaa03286a1614))
+
+### Android
+
+No changes; released to keep every platform on the same version.
+
+### Linux
+
+No changes; released to keep every platform on the same version.
+
 ## 1.10.0 — 2026-11-14
 
 ### Mac
