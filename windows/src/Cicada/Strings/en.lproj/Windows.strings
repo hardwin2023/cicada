@@ -365,3 +365,7 @@
 "换个文件夹，或在它的属性里允许写入" = "Pick another folder, or allow writing in its Properties";
 "在文件资源管理器中显示" = "Show in File Explorer";
 "听起来不像或有杂音？换个安静的地方重录一次。录音仅保存在本机，可随时删除。" = "Doesn't sound like you, or noisy? Record again somewhere quiet. The recording stays on this PC and can be deleted anytime.";
+"会议室的麦克风断开了" = "The room microphone disconnected";
+"已停止记录；插好麦克风后再开始听。" = "Stopped recording. Plug the microphone back in, then start listening.";
+"听不到电脑的声音了" = "Can't hear the PC's audio anymore";
+"已停止记录；稍后再开始听，或重启电脑后再试。" = "Stopped recording. Start listening again in a moment, or restart the PC and try again.";

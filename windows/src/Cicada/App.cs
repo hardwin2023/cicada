@@ -511,8 +511,9 @@ sealed class Controller
                     Toast(L("听会议室要先允许麦克风"), L("电脑声音照常在记"), () => Open("ms-settings:privacy-microphone"));
                 }
                 else if (reason == "none") Toast(L("没有可用的麦克风"), L("电脑声音照常在记"));
-                _ = StopRoomSide();
-                Changed();
+                else Toast(L("会议室的麦克风断开了"), L("电脑声音照常在记"));
+                // The mic is really off now: say so in the tray and the menu, not only stop hearing it.
+                if (reason == "denied") { _ = StopRoomSide(); Changed(); } else SetMic(false);
             });
         };
         HybridMicDenied = false;
@@ -543,6 +544,10 @@ sealed class Controller
                     Toast(L("听会议室要先允许麦克风"), L("Windows 不让知了用麦克风：设置 › 隐私和安全性 › 麦克风"), () => Open("ms-settings:privacy-microphone"));
                 else if (source is GatedSource && reason == "none")
                     Toast(L("没有可用的麦克风"), L("插上麦克风后再开始听。"));
+                else if (source is GatedSource)
+                    Toast(L("会议室的麦克风断开了"), L("已停止记录；插好麦克风后再开始听。"));
+                else
+                    Toast(L("听不到电脑的声音了"), L("已停止记录；稍后再开始听，或重启电脑后再试。"));
                 _ = StopListening();
             });
         };
