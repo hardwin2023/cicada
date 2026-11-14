@@ -112,7 +112,9 @@ static class MicReaders
                 {
                     if (name == "NonPackaged") continue;
                     using var k = parent.OpenSubKey(name);
-                    if (k?.GetValue("LastUsedTimeStop") is long stop) entries.Add((name, stop));
+                    // An app granted the mic but never used has both times 0: not in a call.
+                    if (k?.GetValue("LastUsedTimeStop") is long stop && k.GetValue("LastUsedTimeStart") is long start && start > 0)
+                        entries.Add((name, stop));
                 }
             }
             Read(root);
