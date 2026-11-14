@@ -53,6 +53,8 @@ button.accentbtn:hover { background-color: #D44A22; }
 button.accentbtn image, button.darkbtn image { color: #FFFFFF; }
 button.darkbtn { background-image: none; background-color: #15171C; color: #FFFFFF; border: none; box-shadow: none; border-radius: 7px; padding: 4px 14px; }
 button.darkbtn:hover { background-color: #2A2D34; }
+button.darkbtn:disabled { background-color: #C9CCD3; }
+button.darkbtn:disabled label { color: #FFFFFF; }
 button.darkbtn.pill { border-radius: 14px; }
 button.livepill { background-image: none; background-color: #FDEEE8; color: #B33A14; border: none; box-shadow: none; }
 button.outline { background-image: none; background-color: #FFFFFF; border: 1px solid #E4E6EA; box-shadow: none; border-radius: 7px; padding: 3px 10px; color: #15171C; }
@@ -405,6 +407,22 @@ entry.keyentry { border-radius: 10px; min-height: 34px; }
 .stepbar.on { background-color: #15171C; }
 .bigcard { background-color: #FFFFFF; border: 1px solid #E4E6EA; border-radius: 18px; }
 .raised { background-color: #F6F7F9; border-radius: 8px; }
+/* The own-voice row and sheet (VoicePicker.swift): an accent wash for the voice the room hears. */
+.voicewash { background-color: #FFFAF8; }
+.voicemeter { background-color: #FFFAF8; border-radius: 12px; }
+.voicefail { background-color: #FDECEA; border-radius: 12px; }
+.voicefail label { color: #B42318; }
+.voicerows { background-color: #FFFFFF; border: 1px solid #E4E6EA; border-radius: 14px; }
+.voicepassage { background-color: #F6F7F9; border-radius: 14px; }
+button.voiceplay { background-image: none; background-color: #F2F3F5; border: none; box-shadow: none; border-radius: 16px; min-width: 32px; min-height: 32px; padding: 0; color: #15171C; }
+button.voiceplay.accent { background-color: #E8552B; color: #FFFFFF; }
+button.voiceplay.accent image { color: #FFFFFF; }
+button.voiceplay.accent spinner { color: #FFFFFF; }
+checkbutton.voicecheck check { background-image: none; background-color: #FFFFFF; border: 1px solid #B8BCC4; border-radius: 4px; min-width: 14px; min-height: 14px; box-shadow: none; color: transparent; }
+checkbutton.voicecheck check:checked { background-color: #15171C; border-color: #15171C; color: #FFFFFF; }
+checkbutton.voicecheck check:disabled { background-color: #F3F4F6; }
+checkbutton.voicecheck check:checked:disabled { background-color: #8A8E98; border-color: #8A8E98; }
+.voicetag { background-color: #E8552B; color: #FFFFFF; border-radius: 5px; padding: 1px 6px; }
 .midcard { background-color: #FFFFFF; border: 1px solid #E4E6EA; border-radius: 12px; }
 .tipcard { background-color: #FFFFFF; border-radius: 14px; }
 .hair { background-color: #E4E6EA; min-height: 1px; }

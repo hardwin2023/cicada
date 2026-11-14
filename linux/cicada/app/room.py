@@ -364,15 +364,15 @@ class EchoCanceller:
 
 
 class Player:
-    """Plays 24 kHz mono 16-bit PCM into a sink: 知了 麦克风's (the room) or, for 试听, the speakers."""
+    """Plays 24 kHz (or `rate`) mono 16-bit PCM into a sink: 知了 麦克风's (the room) or, for 试听, the speakers."""
 
-    def __init__(self, device: str | None = SINK):
+    def __init__(self, device: str | None = SINK, rate: int = TTS_RATE):
         lib = _pulse()
         lib.pa_simple_write.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_int)]
         lib.pa_simple_drain.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
         self.lib = lib
-        spec = _Spec(PA_SAMPLE_S16LE, TTS_RATE, 1)
-        attr = _Attr(0xFFFFFFFF, TTS_RATE // 5 * 2, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF)  # ~200 ms buffered
+        spec = _Spec(PA_SAMPLE_S16LE, rate, 1)
+        attr = _Attr(0xFFFFFFFF, rate // 5 * 2, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF)  # ~200 ms buffered
         err = ctypes.c_int(0)
         self.s = lib.pa_simple_new(None, b"Cicada", PA_STREAM_PLAYBACK, device.encode() if device else None,
                                    L("同声传译的声音").encode(), ctypes.byref(spec), None, ctypes.byref(attr), ctypes.byref(err))

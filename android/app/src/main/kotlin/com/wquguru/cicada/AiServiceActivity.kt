@@ -601,10 +601,12 @@ class AiServiceActivity : Activity() {
         /// A model id without its vendor ("qwen3.8-omni-flash"): the rows are narrow.
         fun short(id: String) = id.substringAfterLast('/')
 
-        /// The service's own voice for 我说 (Gemini on OpenRouter and ZenMux), or null: the phone's.
+        /// The service's own voice for 我说 (Ming on Ling, Gemini on OpenRouter and ZenMux), or null:
+        /// the phone's. Which of its voices is 读出来的声音's choice.
         fun cloudVoice(app: CicadaApp): String? {
             val c = app.ling.config()
-            if (!app.ling.speaks || c.isLing) return null
+            if (!app.ling.speaks) return null
+            if (c.isLing) return "Ming"
             val m = c.voiceModel ?: return null
             return if ("gemini" in m.lowercase()) "Gemini" else short(m)
         }

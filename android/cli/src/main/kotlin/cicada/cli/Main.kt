@@ -7,6 +7,8 @@
 //   cicada-cli hear <file.wav> [--target zh-CN]   one file to the hear model (Ming on Ling), raw reply printed
 //   cicada-cli say <file.wav> [--to en] [--out said.wav]
 //       我说 · 面对面: what I say heard and translated, then read by the service's voice into a WAV
+//   cicada-cli speak <text> [--voice US_Emma] [--lang ja] [--out speak.wav]   one line in the service's voice
+//       --reference <wav> [--own zh-CN]: in the voice of that recording (我自己的声音), checked first
 //   cicada-cli segments <file.wav> [--room]  where the segmenter cuts (--room: 面对面's gate)
 //   cicada-cli roundtrip <session.json>…  reads and writes records, says if a byte changed
 //
@@ -109,6 +111,37 @@ fun main(argv: Array<String>) {
             println("voice ${ling.config().voiceModel}: %.1f s of audio, first sound after %d ms, all in %d ms -> %s".format(
                 samples.size / LingClient.TTS_RATE.toDouble(), first, System.currentTimeMillis() - t, file.path))
             exitProcess(0)
+        }
+        "speak" -> {
+            // speak <text> [--voice US_Emma] [--lang ja] [--out speak.wav]: one line in a service voice.
+            Log.echo = args.contains("--log")
+            val ling = client(settings())
+            val voice = opt("--voice", "").ifEmpty { null }
+            val lang = opt("--lang", "").ifEmpty { null }
+            // --reference <wav> [--own zh-CN]: the user's own voice, the recording checked as 录制 checks it.
+            val reference = opt("--reference", "").ifEmpty { null }?.let { path ->
+                val pcm = Wav.read(File(path).inputStream())
+                when (val r = VoiceReference.check(Translator(ling), pcm, opt("--own", "zh-CN"))) {
+                    is VoiceReference.Check.Ok -> {
+                        // What 用这个声音 keeps: the trimmed clip, written and read back as the app does.
+                        println("reference: %.1f s recorded, %.1f s kept, heard %d characters".format(pcm.size / 16000.0, r.pcm.size / 16000.0, r.text.length))
+                        VoiceReference.save(r.pcm, r.text)
+                        VoiceReference.reference()!!
+                    }
+                    is VoiceReference.Check.Again -> { println("reference refused: ${Strings.LF(r.reason, *r.args.toTypedArray())}"); exitProcess(1) }
+                }
+            }
+            val out = java.io.ByteArrayOutputStream()
+            val t = System.currentTimeMillis()
+            var first = 0L
+            ling.speech(args[1], voice, lang, reference = reference) { if (first == 0L) first = System.currentTimeMillis() - t; out.write(it) }
+            val bytes = out.toByteArray()
+            val samples = ShortArray(bytes.size / 2) { ((bytes[2 * it].toInt() and 0xff) or (bytes[2 * it + 1].toInt() shl 8)).toShort() }
+            val file = File(opt("--out", "speak.wav"))
+            file.writeBytes(Wav.bytes(samples, LingClient.TTS_RATE))
+            println("voice ${ling.config().voiceModel} ${voice ?: "-"}: %.1f s of audio, first sound after %d ms, all in %d ms -> %s".format(
+                samples.size / LingClient.TTS_RATE.toDouble(), first, System.currentTimeMillis() - t, file.path))
+            exitProcess(if (samples.isEmpty()) 1 else 0)
         }
         "listen" -> {
             Log.echo = args.contains("--log")

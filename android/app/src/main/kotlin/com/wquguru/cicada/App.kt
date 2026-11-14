@@ -29,6 +29,8 @@ import cicada.SpeakerNamer
 import cicada.SpeakerTagger
 import cicada.Strings
 import cicada.Translator
+import cicada.VoiceCatalog
+import cicada.VoiceReference
 import cicada.Wav
 import java.io.File
 import java.util.Locale
@@ -253,22 +255,87 @@ class CicadaApp : Application() {
 
     fun releaseToSay() = listen.release()
 
+    /// 读出来的声音 for a language: the one chosen in settings, or its default (VoiceCatalog.chosen).
+    fun voiceId(lang: String): String =
+        VoiceCatalog.chosen(settings.speakVoices, lang, ling.config(), ling.speaks, ling.clones && VoiceReference.exists)
+
+    /// 用这个声音: keeps the recording and uses it for `lang` (the language the picker was on).
+    fun saveVoiceReference(pcm: ShortArray, text: String, lang: String): Boolean = try {
+        VoiceReference.save(pcm, text)
+        Log.d("voice clone saved ${pcm.size / 16000} s")
+        settings.speakVoices[VoiceCatalog.key(lang)] = VoiceCatalog.CLONE
+        saveSettings()
+        true
+    } catch (e: Exception) { Log.d("voice clone save failed ${e.javaClass.simpleName}"); false }
+
+    /// 删除: the recording goes, and every language that used it is back on its default.
+    fun removeVoiceReference() {
+        VoiceReference.remove()
+        settings.speakVoices.entries.removeAll { it.value == VoiceCatalog.CLONE }
+        saveSettings()
+        Log.d("voice clone removed")
+    }
+
+    /// Reads `text` in a service voice id (not the phone's): Ming's or Gemini's by name, or the
+    /// user's own cloned from the saved recording. Failed when it can't (the caller falls back).
+    private fun speakIn(id: String, text: String, lang: String, onStart: () -> Unit, onEnd: () -> Unit,
+                        draft: Pair<String, String>? = null): Voice.Result {
+        if (id == VoiceCatalog.CLONE) {
+            val ref = draft ?: VoiceReference.reference()
+            if (ref == null || !ling.clones) { onEnd(); return Voice.Result.Failed }
+            return voice.speakCloud(ling, text, null, VoiceCatalog.mingLanguage(lang), onStart, onEnd, reference = ref)
+        }
+        return if (id.startsWith(VoiceCatalog.MING)) voice.speakCloud(ling, text, id.removePrefix(VoiceCatalog.MING), VoiceCatalog.mingLanguage(lang), onStart, onEnd)
+               else voice.speakCloud(ling, text, id.removePrefix(VoiceCatalog.CLOUD), null, onStart, onEnd)
+    }
+
     /// My words in their language, out of the phone's speaker. The mic is muted for the segmenter
     /// meanwhile (and a beat after, for the room's echo) so the phone doesn't hear itself as them.
-    /// Another AI service with a voice model reads them in its voice (Gemini on OpenRouter and
-    /// ZenMux); Ling and the rest use the phone's, and so does a cloud voice that fails.
+    /// The voice chosen for their language reads them (Ming's on Ling, Gemini's on OpenRouter and
+    /// ZenMux); the phone's reads them when that is the choice, and when a service's voice fails.
     private fun speakAloud(text: String, lang: String) {
         listen.muted = true
         changed()
-        if (ling.speaks && !ling.config().isLing) {
+        val id = voiceId(lang)
+        Log.d("voice: $lang in $id")
+        if (id != VoiceCatalog.PHONE) {
             background.execute {
-                val r = voice.speakCloud(ling, text, onStart = { changed() }, onEnd = {})
+                val r = speakIn(id, text, lang, onStart = { changed() }, onEnd = {})
                 if (r == Voice.Result.Spoken) main.postDelayed({ if (!voice.speaking) { listen.muted = false; changed() } }, 400)
                 else speakWithPhone(text, lang)
             }
             return
         }
         speakWithPhone(text, lang)
+    }
+
+    /// The voice being tried (试听 / 试一句), shown as a spinner on its row.
+    @Volatile var previewing: String? = null; private set
+
+    /// Plays a voice on the speaker with a line in `lang` (the Mac's previewVoice); not a meeting
+    /// line, so nothing is muted. `draft`: a recording not saved yet, for the clone (录好了).
+    /// `failed` comes on the main thread with why nothing played.
+    fun previewVoice(id: String, lang: String, text: String = VoiceCatalog.sample(lang), draft: Pair<String, String>? = null,
+                     failed: (String) -> Unit = {}) {
+        voice.stop()
+        previewing = id
+        changed()
+        fun done() = main.post { if (previewing == id) previewing = null; changed() }
+        if (id == VoiceCatalog.PHONE) {
+            background.execute {
+                val r = voice.speak(text, lang, onStart = {}, onEnd = { done() })
+                if (r != Voice.Result.Spoken) {
+                    done()
+                    main.post { failed(Strings.L(if (r == Voice.Result.NoVoice) "手机不会读这个语言" else "没能读出来")) }
+                }
+            }
+            return
+        }
+        background.execute {
+            val r = speakIn(id, text, lang, onStart = {}, onEnd = { done() }, draft = draft)
+            Log.d("voice: preview $id $lang ${r.name}")
+            if (r != Voice.Result.Spoken) main.post { failed(Strings.L("没能读出来")) }
+        }
     }
 
     private fun speakWithPhone(text: String, lang: String) {

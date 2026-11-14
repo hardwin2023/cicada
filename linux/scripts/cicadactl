@@ -10,6 +10,8 @@
             word-list [import <text>|edit <word>|heard <word>=<form>|delete <word>] (改正听错的词, debug.py › _fixes)
             share <id>[,full][,pw] | unshare <id> | share-last | shareSheet <id>|"" | share-ui <action> (分享…, debug.py › _share)
             export-folder <path>|off|on | export-state | export-all | export-retry | export-choose (存到文件夹, debug.py › _export)
+            voice <lang>[=<id>] | voice-clone <wav>|off|state | voice-preview [<lang>] | voice-dialog open|feed <wav>|finish|play original|clone|save|close
+            (我自己的声音, debug.py › _voice)
 Run it inside the Linux session (linux/vm/vmctl.sh ssh does that for the test VM)."""
 import os
 import socket

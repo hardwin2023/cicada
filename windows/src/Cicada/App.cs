@@ -65,6 +65,8 @@ sealed class Controller
     public readonly FolderExporter FolderExport;
     /// 分享…: the share service, its device key and the links made (sealed files, never the record).
     public readonly ShareClient Sharing = new(new DpapiProtector(), "windows", Version);
+    /// 我自己的声音: the recording Ming clones the user's voice from, sealed like the keys.
+    public readonly VoiceReference OwnVoice = new(new DpapiProtector());
     /// Dev (`silentlisten`): the language `heard` lines are in.
     public string? SilentLang;
     /// Started with Windows (--background): stay in the tray. Opened by hand, the main window shows.
@@ -135,6 +137,7 @@ sealed class Controller
         Speak = new SpeakEngine(Ling, Translator, Store, Settings, () => Listen.Spoken,
             () => Listen.Listening && Listen.SessionId is { } id && Store.Get(id) is { } s ? (id, s.StartedAt) : null, WindowsVoice);
         Speak.Changed += () => Dispatch.BeginInvoke(() => { speakBar ??= new SpeakBar(this); speakBar.Refresh(); });
+        Speak.Reference = OwnVoice;
         Listen.Voiceprint = new WinVoiceprint();
         // No voices on the room side: its numbers would collide with the PC's.
         // The talk key's echo check: the meeting playing through a press is sent back otherwise.
@@ -948,7 +951,7 @@ sealed class Controller
             Changed();
             try
             {
-                var chosen = VoiceCatalog.Chosen(Settings, language, Ling.Config, Ling.Speaks, WindowsVoice.Has(language));
+                var chosen = Speak.ChosenVoice(language);
                 var voiced = await Speak.Voice(VoiceCatalog.Sample(language), language, speaker);
                 result = speaker.Stopped ? PreviewResult.Stopped
                     : !voiced ? (WindowsVoice.Has(language) ? PreviewResult.Failed : PreviewResult.NoVoice)
@@ -962,6 +965,78 @@ sealed class Controller
         Log.Debug($"preview: {language} {result}");
         Changed();
         return result;
+    }
+
+    // MARK: 我自己的声音
+
+    /// The microphone a recording for the user's own voice comes from: the talk key's.
+    public Endpoints.Device? OwnVoiceMic() => TalkMic();
+
+    /// What a recording says, as the hear model (Ming on Ling) hears it; null when it heard nothing.
+    public async Task<string?> Transcribe(byte[] wav) =>
+        (await Translator.Hear(wav, Speak.Target, Speak.MyLanguage, Priority.Speak))?.Original;
+
+    /// Plays a recording (16 kHz mono WAV) on the speakers; 停止 is StopPreview.
+    public async Task PlayRecording(byte[] wav)
+    {
+        previewing?.Stop();
+        var speaker = new DeviceSpeaker(() => Endpoints.Default(Endpoints.Flow.Render));
+        if (!speaker.Ready) return;
+        previewing = speaker;
+        try
+        {
+            speaker.Begin(Segmenter.Rate);
+            speaker.Write(wav.Length > 44 ? wav[44..] : wav);
+            await speaker.End();
+        }
+        finally { if (previewing == speaker) previewing = null; }
+    }
+
+    /// The review's 用你的声音说…: the language's sample line in a voice cloned from a recording not
+    /// yet kept, on the speakers. True once something played.
+    public async Task<bool> PreviewOwnVoice(byte[] wav, string text, string language)
+    {
+        previewing?.Stop();
+        var speaker = new DeviceSpeaker(() => Endpoints.Default(Endpoints.Flow.Render));
+        if (!speaker.Ready || !Ling.Clones) return false;
+        previewing = speaker;
+        Changed();
+        int chunks = 0;
+        try
+        {
+            var reference = ("data:audio/wav;base64," + Convert.ToBase64String(wav), text);
+            await foreach (var pcm in Ling.Speech(VoiceCatalog.Sample(language), null, VoiceCatalog.MingLanguage(language), reference))
+            {
+                if (speaker.Stopped) break;
+                if (chunks++ == 0) speaker.Begin(24000);
+                speaker.Write(pcm);
+            }
+            if (chunks > 0) await speaker.End();
+        }
+        catch (LingException e) { Log.Debug($"preview: cloned voice failed {e.Message}"); }
+        finally { if (previewing == speaker) previewing = null; Changed(); }
+        Log.Debug($"preview: cloned voice {language} {(chunks > 0 ? "played" : "silent")}");
+        return chunks > 0;
+    }
+
+    /// Keeps a recording as the user's own voice and uses it for `language` (VoiceCloneSheet.save).
+    public void SaveOwnVoice(byte[] wav, string text, string language)
+    {
+        OwnVoice.Save(wav, text);
+        Settings.SpeakVoices[VoiceCatalog.Key(language)] = VoiceCatalog.CloneId;
+        Settings.Save();
+        Log.Debug($"voice clone saved {(wav.Length - 44) / 32000.0:F0} s");
+        Changed();
+    }
+
+    /// 删除: the recording goes, and every language that used it gets its default back.
+    public void RemoveOwnVoice()
+    {
+        OwnVoice.Remove();
+        foreach (var k in Settings.SpeakVoices.Where(p => p.Value == VoiceCatalog.CloneId).Select(p => p.Key).ToList()) Settings.SpeakVoices.Remove(k);
+        Settings.Save();
+        Log.Debug("voice clone removed");
+        Changed();
     }
 
     // MARK: Windows
@@ -1376,6 +1451,9 @@ sealed class Controller
         ["heard"] = Speak.Heard,
         ["speakProblem"] = Speak.Problem,
         ["voice"] = Speak.LastVoice,
+        ["ownVoice"] = OwnVoice.Exists ? Math.Round(OwnVoice.Duration, 1) : null,
+        ["ownVoiceReady"] = Speak.CloneReady,
+        ["voiceFor"] = Speak.ChosenVoice(Speak.Target),
         ["cable"] = Endpoints.Cable() is not null,
         ["autostart"] = AutoStart.Enabled,
         ["ending"] = Ending is { } p ? $"{EndingTitle(p)} · {EndingLeft(p)}" : null,
@@ -1403,6 +1481,7 @@ sealed class Controller
 ///   updatefeed <url or file> | checkupdate
 ///   calls <program=name,…>|none|real | realcalls | endtimes <silence> <countdown> <grace>|off | endkeep
 ///   provider ling|openrouter|zenmux|custom | ai-model hear|text|voice <id> (设置 › AI 服务; no id: the recommended)
+///   ownvoice <wav>[|<text>] | ownvoice remove | ownvoice dialog [<wav>] | voice <lang>=<id> (我自己的声音)
 ///   open <id> [transcript] | play <seconds>|toggle|speed|follow|row <i> | recordaudio on|off (保存会议录音 and 回放)
 ///   aacencode <wav>|<out.aac> | aacrewrap <in.aac>|<out.m4a>[|<seconds>]
 ///   ai-check | ai-check-sim <reason|lowBalance|off> (unreachable, invalidKey, noCredit, noModel, deaf, busy…)
@@ -1485,6 +1564,37 @@ static class DebugServer
                 if (arg == "on" || arg == "off") { app.Settings.Speak = arg == "on"; app.Settings.Save(); app.SettingsChanged(); }
                 else _ = app.Speak.Speak(Wav.Bytes(Wav.Read(arg)), new DeviceSpeaker(Endpoints.Cable));
                 break;
+            // 我自己的声音 without a microphone: "ownvoice <wav>[|<what it says>]" checks a recording as
+            // the dialog does (heard by Ming unless the words are given) and keeps it; "ownvoice remove"
+            // is 删除; "ownvoice dialog [<wav>]" opens the recording dialog (with a WAV: as if just read).
+            case "ownvoice":
+            {
+                if (arg == "remove") { app.RemoveOwnVoice(); return new JsonObject { ["ownVoice"] = app.OwnVoice.Exists }; }
+                if (arg.StartsWith("dialog"))
+                {
+                    var file = arg[6..].Trim();
+                    app.Dispatcher().BeginInvoke(() => VoiceCloneDialog.Open(app, app.Speak.Target, file.Length > 0 ? Wav.Bytes(Wav.Read(file)) : null));
+                    break;
+                }
+                var p = arg.Split('|', 2);
+                var wav = Wav.Bytes(Wav.Read(p[0]));
+                var given = p.Length > 1 ? p[1].Trim() : null;
+                var target = app.Speak.Target;
+                _ = Task.Run(async () =>
+                {
+                    var (outcome, text, trimmed) = await VoiceCloneCheck.Check(wav, w => given is not null ? Task.FromResult<string?>(given) : app.Transcribe(w));
+                    Log.Debug($"ownvoice: {outcome}");
+                    if (outcome == VoiceCloneCheck.Outcome.Ready) app.Dispatcher().Invoke(() => app.SaveOwnVoice(trimmed, text, target));
+                });
+                break;
+            }
+            // voice <lang>=<id>: 线上的人听到的声音 for a language ("voice en=clone", "voice zh=ming:灵小雅").
+            case "voice":
+            {
+                var kv = arg.Split('=', 2);
+                if (kv.Length == 2) { app.Settings.SpeakVoices[VoiceCatalog.Key(kv[0])] = kv[1]; app.Settings.Save(); app.SettingsChanged(); }
+                return new JsonObject { ["voice"] = app.Speak.ChosenVoice(kv[0]), ["clone"] = app.Speak.CloneReady };
+            }
             case "provider": app.SetAIProvider(arg); break;
             // switchtoling: the 改用 Ling on a status line (logs why when it isn't offered).
             case "switchtoling": Log.Debug($"switchtoling offered={app.CanSwitchToLing}"); app.SwitchToLing(); break;

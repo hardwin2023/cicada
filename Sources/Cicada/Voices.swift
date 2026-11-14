@@ -148,6 +148,9 @@ enum VoiceReference {
 
     /// What Ming needs: the clip as a data URI and its transcript.
     static func reference() -> (audio: String, text: String)? {
+        #if !CICADA_IOS
+        trimSaved()
+        #endif
         guard let data = try? Data(contentsOf: audioURL), let text, !text.isEmpty else { return nil }
         return ("data:audio/wav;base64," + data.base64EncodedString(), text)
     }
@@ -158,6 +161,9 @@ enum VoiceReference {
         try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
         if fm.fileExists(atPath: audioURL.path) { try fm.removeItem(at: audioURL) }
         try fm.copyItem(at: wav, to: audioURL)
+        #if !CICADA_IOS
+        trim(audioURL)
+        #endif
         try Data(text.utf8).write(to: textURL)
         for url in [audioURL, textURL] {
             try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
@@ -199,6 +205,60 @@ enum VoiceReference {
 
     /// Seconds from the first to the last 20 ms window within 35 dB of the loudest one.
     static func speechSpan(_ samples: [Float], sampleRate: Double) -> Double? {
+        guard let w = speechWindows(samples, sampleRate: sampleRate) else { return nil }
+        return Double(w.last - w.first + 1) * Double(w.size) / sampleRate
+    }
+
+    /// The samples from 0.2 s before the reading to 0.2 s after it. Ming copies the clip's ending:
+    /// a second of silence after the last word (the pause before 读完了) made every cloned
+    /// sentence come back as 0.4 s of nothing (measured against Ling, 2026-11).
+    static func trimmed(_ samples: [Float], sampleRate: Double) -> ArraySlice<Float> {
+        guard let w = speechWindows(samples, sampleRate: sampleRate) else { return samples[...] }
+        let pad = Int(sampleRate * 0.2)
+        return samples[max(0, w.first * w.size - pad)..<min(samples.count, (w.last + 1) * w.size + pad)]
+    }
+
+    /// Rewrites a WAV without the quiet around the reading; false when there was nothing to cut.
+    @discardableResult
+    static func trim(_ url: URL) -> Bool {
+        guard let f = try? AVAudioFile(forReading: url),
+              let buf = AVAudioPCMBuffer(pcmFormat: f.processingFormat, frameCapacity: AVAudioFrameCount(f.length)),
+              (try? f.read(into: buf)) != nil, let ch = buf.floatChannelData?[0] else { return false }
+        let rate = f.processingFormat.sampleRate
+        let all = Array(UnsafeBufferPointer(start: ch, count: Int(buf.frameLength)))
+        let kept = trimmed(all, sampleRate: rate)
+        guard all.count - kept.count > Int(rate * 0.05),
+              let out = AVAudioPCMBuffer(pcmFormat: f.processingFormat, frameCapacity: AVAudioFrameCount(kept.count)),
+              let dst = out.floatChannelData?[0] else { return false }
+        kept.withUnsafeBufferPointer { dst.update(from: $0.baseAddress!, count: kept.count) }
+        out.frameLength = AVAudioFrameCount(kept.count)
+        let tmp = url.deletingLastPathComponent().appendingPathComponent(".trim-\(UUID().uuidString).wav")
+        do {
+            // Scoped so the file is closed (its header written) before it replaces the original.
+            do {
+                let w = try AVAudioFile(forWriting: tmp, settings: f.fileFormat.settings,
+                                        commonFormat: f.processingFormat.commonFormat, interleaved: f.processingFormat.isInterleaved)
+                try w.write(from: out)
+            }
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return true
+        } catch {
+            try? FileManager.default.removeItem(at: tmp)
+            return false
+        }
+    }
+
+    /// The saved recording, trimmed once: recordings made before trimming existed end in the pause.
+    private static var checkedTrim: Date?
+    static func trimSaved() {
+        let date = (try? audioURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        guard let date, date != checkedTrim else { return }
+        if trim(audioURL) { debugLog("voice clone: trimmed the saved recording to \(String(format: "%.1f", duration)) s") }
+        checkedTrim = (try? audioURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
+    private static func speechWindows(_ samples: [Float], sampleRate: Double) -> (first: Int, last: Int, size: Int)? {
         let size = max(1, Int(sampleRate * 0.02))
         var levels: [Float] = []
         var i = 0
@@ -213,7 +273,7 @@ enum VoiceReference {
         let floor = loudest * 0.0178
         guard let first = levels.firstIndex(where: { $0 >= floor }),
               let last = levels.lastIndex(where: { $0 >= floor }) else { return nil }
-        return Double(last - first + 1) * Double(size) / sampleRate
+        return (first, last, size)
     }
 
     /// The pace of a WAV and what it says.
