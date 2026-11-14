@@ -248,6 +248,12 @@ class Records(Base):
         self.assertIsNone(s.notes.topics[0].point_time(1))
         self.assertEqual(MAC, s.write())
 
+    def test_keeps_the_macs_voiceprint_matches(self):
+        # The Mac's voiceprint library (1.10) adds voiceProfiles / voiceSuggestions: kept on save.
+        ref = '{\n    "1" : {\n      "id" : "6F9619FF-8B86-D011-B42D-00C04FC964FF",\n      "name" : "Emma",\n      "similarity" : 0.75\n    }\n  }'
+        text = MAC[:-2] + ',\n  "voiceProfiles" : ' + ref + ',\n  "voiceSuggestions" : ' + ref + '\n}'
+        self.assertEqual(text, Session.read(text).write())
+
     def test_keeps_where_a_line_was_heard(self):
         # 电脑和会议室 on the Mac: a room line says "via" : "room"; written back unchanged.
         text = MAC.replace('      "t" : 2.5,\n      "voice" : 1\n', '      "t" : 2.5,\n      "via" : "room",\n      "voice" : 1\n')
