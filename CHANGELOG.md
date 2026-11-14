@@ -5,6 +5,57 @@ writes it from the `feat:` and `fix:` commits since the last tag, grouped by pla
 scope), and the release workflow publishes it as the release notes. Since 1.1.2 every release ships
 every platform (one with nothing new says No changes); earlier ones shipped only those listed. Lines under `## Unreleased` become the release's summary. The Chinese changelog for users is `site/changelog.json`.
 
+## 1.10.0 — 2026-11-14
+
+### Mac
+
+#### New
+
+- Remember known voices across meetings ([9a17476](https://github.com/wquguru/cicada/commit/9a17476dca1707d0770ce10d1f7eb9c8a65b321d))
+- Open the room microphone when the user starts a meeting ([0d9296c](https://github.com/wquguru/cicada/commit/0d9296cdc4ceaa4378a5c476d90ccd77064f2e8d))
+- Re-transcribe a saved meeting from its recording ([fa85ed5](https://github.com/wquguru/cicada/commit/fa85ed57786465f6692a5409cf14c826e42db285))
+- Option to label a speaker on every line ([dbff738](https://github.com/wquguru/cicada/commit/dbff73887aa73670e5c30acc061b132c4646a959))
+- Edit meeting notes and build a people library ([a777554](https://github.com/wquguru/cicada/commit/a7775544167d9ea4afa5ced53a771269894c2a77))
+- Name a voice from its transcript tag ([fc143e8](https://github.com/wquguru/cicada/commit/fc143e8d2a772acd1112948c26d9a73496992d2f))
+- Copy Notes and Copy Everything paste into document apps with headings, lists and the fishbone as a picture ([d8471f7](https://github.com/wquguru/cicada/commit/d8471f73e3d765c08bfdbae1e09f062aa3c19905))
+- Right-click a fishbone to copy it as an image or as text ([2647a9d](https://github.com/wquguru/cicada/commit/2647a9da9cd9f47cb676e3bdac1fd69222291758))
+
+#### Fixed
+
+- Require 6 seconds of speech before enrolling ([b429a0e](https://github.com/wquguru/cicada/commit/b429a0ef6b38eed6f301f61e5db2fca3556cb46f))
+- Start auto in the Mac language, not English ([9260692](https://github.com/wquguru/cicada/commit/926069280f490d2f60bee1d18e2e7eca2e224e71))
+- Hear your own voice and name a one-to-one caller ([2f1c939](https://github.com/wquguru/cicada/commit/2f1c9396b86621f0cc3ec511826e1bf767246862))
+- Keep a one-to-one voice nameable past a stray cluster ([738e6ac](https://github.com/wquguru/cicada/commit/738e6ac3011bc04f72c1b93d64f8f7f9db74874c))
+- Your own voice no longer comes out silent when the recording ends in a pause ([cad2453](https://github.com/wquguru/cicada/commit/cad2453273efcca39d4a20507e69b22679aeb4a5))
+
+### Windows
+
+#### New
+
+- Interpreting can speak in your own voice: record 15 seconds and the meeting hears your translation in it (#32) ([29cf959](https://github.com/wquguru/cicada/commit/29cf959d69f6aef75a5074dc78a7411ee8544198))
+
+#### Fixed
+
+- The cloned voice no longer comes out silent when the recording ends in a pause ([920c82f](https://github.com/wquguru/cicada/commit/920c82f3408d3750121779123156a31e4e898587))
+
+### Android
+
+#### New
+
+- In person can read your translated words in your own voice, cloned from a 10–15 s recording with a Ling key ([3a993c0](https://github.com/wquguru/cicada/commit/3a993c00c04142e975bde653ca1f8687c48cab0d))
+
+#### Fixed
+
+- Face to face now hears people speaking normally across the table, not only someone right at the phone ([415b092](https://github.com/wquguru/cicada/commit/415b092b62e92ede7912b9120abf3cddb5815b76))
+- In person reads your words in a voice you choose for each language, including Ming's with a Ling key ([341afdf](https://github.com/wquguru/cicada/commit/341afdf459655d1260441bc19eeef6c5c7db3766))
+- Your own voice no longer comes out cut short when the recording ends in a pause ([29b5714](https://github.com/wquguru/cicada/commit/29b57142a65710f110de53dff6d78f4a9f0b1e62))
+
+### Linux
+
+#### New
+
+- Interpreting can speak in your own voice: record 10–15 s in Settings and the room hears the translation in it ([ae02317](https://github.com/wquguru/cicada/commit/ae02317c5144b3510648f3b1d7decedfc416b2aa))
+
 ## 1.9.0 — 2026-11-12
 
 ### Mac
