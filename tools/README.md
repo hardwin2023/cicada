@@ -22,7 +22,7 @@
   - 试一句：`speakTest:sample`（Mac 读一句示例）或 `speakTest:voice`（再发 `speakTestBegin` / `speakTestEnd` 当作按住、松开），结果以 `speak test:` 写进日志；`speakTestState`、`speakTestRender:<png>`、`speakTestClose`
   - 识别引擎：`recognizer:legacy` 在 macOS 26 上改用 14 / 15 的识别（`SFSpeechRecognizer`，第一次会要“语音识别”权限），`recognizer:cloud` 像 Intel Mac 那样全部交给 Ling 听（没有 key 就听不了），`recognizer:auto` 换回；下一次开始听起生效（或启动时 `open --env CICADA_RECOGNIZER=legacy`），日志里 `transcriber started recognizer=…`；`recordTrack:off` 让会议记录不再另用一遍不切句的识别（下一次开始听起生效，对比准确度用；`open --env CICADA_RECORD_TRACK=off` 同理），`recordState` 把还在校准的句数写进日志，打开 `debug` 后日志里有 `RECORD` 和 `REFINE`
   - 多开：两边都设 `CICADA_DEBUG_CHANNEL=x`（`open -n --env CICADA_DEBUG_CHANNEL=x build/Cicada.app`），命令只发给这一份，日志在 `/tmp/livesubs-dev-debug-x.log`
-  - 导出：`export:<目录>`
+  - 导出：`export:<目录>`；复制：`copy[:<会议 id>]`（导出… › 复制全文）、`copyNotes[:<会议 id>]`（纪要 › 复制纪要），日志写出剪贴板里每种格式的字节数（`public.html`、`com.apple.flat-rtfd`、纯文本）；`fishboneRender:<会议 id>=<png>` 把第一张鱼骨图按“复制为图片”画出来
   - 导入录音或视频：`import:<路径>[,<路径>…]`（等于拖进会议记录窗口），`importState` 把进度写进日志，`importCancel` 停止转写，`importRetry:<会议 id>[=<locale>]` 重新转写（带 locale 等于在“这场会议只留下了录音”里选了这种语言），`importNotify` 把通知权限写进日志
   - 存到文件夹：`exportFolder:<路径>` 选文件夹（等于“存到这里”，会马上试写一次），`exportFolder:off` 关掉，`exportAll` 即“也存一份”，`rename:<会议 id>=<标题>` 像在记录里改标题（不给标题恢复自动标题），`exportState` 回复索引（`files`、`pending`、`unwritten`、`lastFile`）和问题（`denied` `missing` `failed`）
   - 新手引导与窗口：`onboarding:<步骤>[,skip|ask|setup]`（1–5，5 是收尾页；skip 是第 3 步点了“先不接”，ask / setup 是第 4 步的二选一 / 清单）、`samplePlay`、`speakers:<on|off>`（“说话人识别”）、`speakerGuess:<会议 id>`（马上让 Ling 认一遍名字）、`speakersRender:<会议 id>=<png>`、`voiceprintFile:<音频>=<json>`（用 app 里的声纹模型算整个文件的声纹，和参考模型对比）、`closeWindow:<main|settings|onboarding>`、`settings:<overlay|language|speak|records|ai|diagnostics>`、`about`

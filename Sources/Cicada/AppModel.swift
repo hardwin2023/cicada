@@ -2570,6 +2570,21 @@ final class AppModel: ObservableObject {
                 let ok = writeExport(s, kind: kind, to: dir.appendingPathComponent("export.\(ext)"))
                 debugLog("export \(ext) ok=\(ok)")
             }
+        case "copy", "copyNotes":
+            // `copy[:<id>]` is 导出… › 复制全文, `copyNotes[:<id>]` the menu's 复制纪要; then the types on the pasteboard.
+            let id = arg.isEmpty ? (store.sessions.first(where: { $0.id != store.liveID }) ?? store.sessions.first)?.id : arg
+            guard let id, let s = store.session(id) else { return debugFail("copy: no record", code: "not_found") }
+            if parts[0] == "copy" { export(s, kind: "copy") } else { RichCopy.notes(s.notes, title: s.notes?.title) }
+            let pb = NSPasteboard.general
+            let sizes = (pb.types ?? []).map { "\($0.rawValue)=\(pb.data(forType: $0)?.count ?? 0)" }
+            debugLog("copy: \(sizes.joined(separator: " ")) fishbones=\(s.notes?.topics.filter { $0.fishbone != nil }.count ?? 0)")
+        case "fishboneRender":
+            // `fishboneRender:<id>=<png>`: the first fishbone of that record as 复制为图片 draws it.
+            let kv = arg.split(separator: "=", maxSplits: 1).map(String.init)
+            guard kv.count == 2, let s = store.session(kv[0]), let f = s.notes?.topics.lazy.compactMap(\.fishbone).first,
+                  let p = RichCopy.picture(f, caption: s.displayTitle) else { return debugFail("fishboneRender: no fishbone", code: "not_found") }
+            try? p.png.write(to: URL(fileURLWithPath: kv[1]))
+            debugLog("fishboneRender: \(p.png.count) bytes")
         default: debugFail("unknown debug command: \(parts.first ?? "")", code: "unknown_command")
         }
     }
