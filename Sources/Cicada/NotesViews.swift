@@ -455,6 +455,13 @@ struct FishboneView: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 16).stroke(Palette.line, lineWidth: 1))
+        .contentShape(Rectangle())
+        .contextMenu {
+            if !forPicture {
+                Button("复制为图片") { RichCopy.image(fishbone, caption: nil) }
+                Button("复制为文字") { RichCopy.text(fishbone) }
+            }
+        }
     }
 
     private var spine: some View {
