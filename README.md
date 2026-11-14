@@ -76,9 +76,9 @@ Turning on interpreting switches the system microphone to BlackHole 2ch, a virtu
 
 ### Meeting records
 
-Bilingual transcripts, notes, and raw audio recordings are saved on your device. Click any line to play from that point while the text highlights and scrolls along. The on-device voiceprint model automatically separates speakers (and fills in their names when a Ling key is set), and you can rename or merge them anytime if someone is misidentified. Right now "you" in the record only covers what you say while holding the talk key; capturing what you say directly in the meeting is on the [roadmap](#roadmap).
+Bilingual transcripts, notes, and raw audio recordings are saved on your device. Click any line to play from that point while the text highlights and scrolls along. The on-device voiceprint model automatically separates speakers (and fills in their names when a Ling key is set), and you can rename or merge them anytime if someone is misidentified. On the Mac, name a speaker and click **Remember this voice** (check with them first) and later meetings recognize them; the voiceprint stays on this Mac, and **Settings › General › Remember speakers** manages or deletes it. Right now "you" in the record only covers what you say while holding the talk key; capturing what you say directly in the meeting is on the [roadmap](#roadmap).
 
-After a meeting, you can generate notes retroactively, export to Markdown, Word, and SRT subtitles, or transcribe local audio and video files via **File › Import Recording or Video…**. On the Mac, **Copy Notes** (⇧⌘C) pastes into Feishu, Notion or Word with its headings, lists and fishbone picture, and as Markdown into a chat. Turn on **Settings › General › Save to folder** and each meeting is also automatically saved as Markdown (with frontmatter at the top for agents) into an Obsidian vault or another folder, updating automatically whenever you rename it or regenerate its notes.
+After a meeting, you can generate notes retroactively, fix them by hand with **Edit Notes** in the main window, use **Transcribe Again** on the recording if the wrong language was picked, export to Markdown, Word, and SRT subtitles, or transcribe local audio and video files via **File › Import Recording or Video…**. On the Mac, **Copy Notes** (⇧⌘C) pastes into Feishu, Notion or Word with its headings, lists and fishbone picture, and as Markdown into a chat. Turn on **Settings › General › Save to folder** and each meeting is also automatically saved as Markdown (with frontmatter at the top for agents) into an Obsidian vault or another folder, updating automatically whenever you rename it or regenerate its notes.
 
 Click **Share…** to generate a link to the notes (optionally including the full bilingual transcript) with an expiration time and password; before uploading, it automatically blocks keys, unpublished company info, and other sensitive content.
 
@@ -161,7 +161,7 @@ In rough order of priority; feel free to open an Issue for what you'd like to se
 
 - **Record my own speech**: Continuously listen to the microphone with echo cancellation during meetings so what you say directly is also included in records and notes.
 - **Code signing and notarization**: Official signing and notarization for Mac and Windows installers to eliminate security prompts and move AI keys back to the system keychain.
-- **Speaker recognition**: Remember frequent coworkers' voices on device and recognize them automatically in future meetings.
+- **Speaker recognition on the other platforms**: The Mac already remembers frequent coworkers' voices and recognizes them in later meetings; Windows, Linux and Android come next.
 - **Notes without a key**: Generate meeting notes on supported Macs using Apple's on-device models.
 - **Android on app stores**: No more manual APK installs.
 - **iPhone and iPad**: Starting with listening to meeting rooms, face-to-face interpreting, and meeting records.

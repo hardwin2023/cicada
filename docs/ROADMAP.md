@@ -7,7 +7,7 @@ In rough order, and subject to change. Tell us what you need in Issues.
 **Next (Mac)**
 - **Recording what you say.** Cicada only hears what your Mac plays, so what you say into the meeting isn't captured; only the lines you speak while holding the talk key are recorded as "you". A switch will let it listen to your microphone throughout the meeting, so your proposals and the to-dos you take on make it into the transcript and notes. Without headphones, echo cancellation keeps the other side's voice from being recorded twice. While it's on, the microphone indicator in the menu bar stays lit.
 - **Developer ID signing and notarization.** Removes the "Open Anyway" prompt on first launch and stores the AI key in the macOS Keychain.
-- **Speaker recognition.** Speaker identification (experimental, since 1.0) already tells the other side's voices apart within a meeting, lets you rename them and names to-do owners, but forgets them when the meeting ends. Next, Cicada will remember frequent meeting participants by voice so they're named in the next meeting too. Because voiceprints are biometric data, they stay on your Mac, require opt-in, and can be deleted anytime.
+- **Speaker recognition on the other platforms.** Since 1.10 the Mac remembers frequent meeting participants by voice and names them in the next meeting (stored only on your Mac, only after you click Remember this voice, deletable anytime). Windows, Linux and Android come next.
 - **Local notes without an API key.** Use Apple's on-device model to generate meeting notes on supported Macs, keeping all audio and text local.
 
 **Later**
