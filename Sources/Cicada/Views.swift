@@ -822,7 +822,7 @@ struct MainWindowView: View {
     @State private var dropping = false
     @State private var selection: String?
     @State private var query = ""
-    @State private var view = "src"
+    @State private var view = "both"
     @State private var tab = "notes"
     @State private var jumpTo: Double?
     /// A topic's time picked in the notes, for the bilingual column beside them.
