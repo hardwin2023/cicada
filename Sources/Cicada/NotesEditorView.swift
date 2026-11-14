@@ -34,7 +34,7 @@ struct NotesEditorView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     field("纪要标题") {
-                        TextField("例如：招商局软件工厂沟通", text: optional(\.title))
+                        TextField("例如：季度产品评审", text: optional(\.title))
                             .textFieldStyle(.roundedBorder)
                     }
 

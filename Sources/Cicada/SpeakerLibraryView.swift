@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// The local people library: voices remembered by voiceprint, plus what the user knows about the
-/// person and a note on how they tend to talk. Voiceprints are biometric data: every row can be
+/// person. Voiceprints are biometric data: every row can be
 /// removed here, and nothing is uploaded.
 struct SpeakerLibraryView: View {
     @ObservedObject var model: AppModel
@@ -18,7 +18,7 @@ struct SpeakerLibraryView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L("人员库")).font(.system(size: 20, weight: .bold)).foregroundStyle(Palette.ink)
-                    Text(L("声纹只保存在这台 Mac；可以写备注、看说话风格，也可以删除。"))
+                    Text(L("声纹只保存在这台 Mac；可以写备注，也可以删除。"))
                         .font(.system(size: 11)).foregroundStyle(Palette.tertiary)
                 }
                 Spacer()
@@ -63,18 +63,11 @@ struct SpeakerLibraryView: View {
                                     } else {
                                         Button(L("资料")) { detail = p }.buttonStyle(.plain)
                                             .font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                                        Button(L("分析")) { analyze(p) }.buttonStyle(.plain)
-                                            .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                                         Button(L("改名")) { editing = p.id; draft = p.name }.buttonStyle(.plain)
                                             .font(.system(size: 12)).foregroundStyle(Palette.secondary)
                                         Button(L("删除")) { delete(p) }.buttonStyle(.plain)
                                             .font(.system(size: 12)).foregroundStyle(Palette.accentInk)
                                     }
-                                }
-                                if let style = p.style, !style.isEmpty {
-                                    Text(style).font(.system(size: 11)).foregroundStyle(Palette.secondary)
-                                        .lineLimit(3).fixedSize(horizontal: false, vertical: true)
-                                        .padding(.leading, 40)
                                 }
                                 if let notes = p.notes, !notes.isEmpty {
                                     Text(notes).font(.system(size: 11)).foregroundStyle(Palette.tertiary)
@@ -106,17 +99,6 @@ struct SpeakerLibraryView: View {
     private func save(_ p: SpeakerProfile) {
         model.renameSpeakerProfile(id: p.id, to: draft)
         editing = nil
-    }
-
-    private func analyze(_ p: SpeakerProfile) {
-        guard model.analyzeSpeakerStyle(id: p.id) != nil else {
-            let a = NSAlert()
-            a.messageText = L("还没有这个人的发言")
-            a.informativeText = L("先在会议里给这个声音命名并记住，分析会从已绑定到这个声纹的发言里归纳。")
-            a.addButton(withTitle: L("知道了"))
-            a.runModal()
-            return
-        }
     }
 
     private func delete(_ p: SpeakerProfile) {
@@ -174,15 +156,6 @@ struct SpeakerProfileEditor: View {
                     .frame(minHeight: 140)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Palette.raised))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.line, lineWidth: 1))
-            }
-            if let style = profile.style, !style.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L("说话风格")).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.secondary)
-                    Text(style).font(.system(size: 12)).foregroundStyle(Palette.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(L("这是从发言内容做的表达方式归纳，不是心理测评。"))
-                        .font(.system(size: 10)).foregroundStyle(Palette.tertiary)
-                }
             }
             Spacer()
             HStack {

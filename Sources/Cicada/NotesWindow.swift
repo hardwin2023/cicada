@@ -362,8 +362,6 @@ struct NotesWindowView: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).help("结束这场会议").padding(.trailing, 4)
-                    } else if let s = session, !engine.notes.isEmpty {
-                        NotesEditButton(model: model, session: s)
                     }
                     iconButton(wide ? "rectangle.split.2x1.fill" : "rectangle.split.2x1", help: wide ? L("收窄") : L("纪要和原话并排")) {
                         setWidth(wide ? 460 : 820, nil)

@@ -1536,7 +1536,7 @@ final class AppModel: ObservableObject {
         }
         let alert = NSAlert()
         alert.messageText = L("记住“\(chosen)”的声音？")
-        alert.informativeText = L("请先确认对方知道。声纹只保存在这台 Mac，用于以后会议认出这个人，可随时在声纹库里删除。")
+        alert.informativeText = L("请先确认对方知道。声纹只保存在这台 Mac，用于以后会议认出这个人，可随时在人员库里删除。")
         alert.addButton(withTitle: L("记住"))
         alert.addButton(withTitle: L("不用"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
@@ -1580,51 +1580,6 @@ final class AppModel: ObservableObject {
     func saveSpeakerProfileNotes(id: UUID, notes: String) {
         guard profiles.setNotes(id: id, notes) else { return }
         speakerProfiles = profiles.all()
-    }
-
-    /// Summarise how this person talks from the lines already bound to their voiceprint. This is a
-    /// communication-style note (length, questions, directness), not a personality diagnosis.
-    @discardableResult
-    func analyzeSpeakerStyle(id: UUID) -> String? {
-        guard let profile = profiles.snapshot().first(where: { $0.id == id }) else { return nil }
-        var texts: [String] = []
-        for session in store.sessions {
-            guard let refs = session.voiceProfiles else { continue }
-            for line in session.lines where line.speaker == "them" {
-                guard let voice = line.voice, refs[String(voice)]?.id == id else { continue }
-                let text = line.src.trimmingCharacters(in: .whitespacesAndNewlines)
-                if text.count >= 4 { texts.append(text) }
-            }
-        }
-        guard !texts.isEmpty else { return nil }
-        let joined = texts.joined(separator: " ")
-        let chars = joined.filter { !$0.isWhitespace }.count
-        let avg = Double(chars) / Double(texts.count)
-        let questions = texts.filter { $0.contains("?") || $0.contains("？") }.count
-        let hedges = count(["可能", "也许", "大概", "应该", "我觉得", "不确定", "或许"], in: joined)
-        let direct = count(["必须", "一定", "肯定", "直接", "明确", "需要", "马上", "推进", "决定", "要"], in: joined)
-        let first = count(["我", "我们"], in: joined)
-        var parts: [String] = ["基于 \(texts.count) 句发言"]
-        parts.append(avg >= 22 ? "句子偏长，信息密度高" : avg >= 10 ? "句子长度适中" : "表达简短，偏要点式")
-        if Double(questions) / Double(texts.count) >= 0.12 { parts.append("常用提问推动对话") }
-        if direct >= max(3, texts.count / 10) { parts.append("常给判断、要求和下一步") }
-        if hedges >= max(3, texts.count / 12) { parts.append("措辞较谨慎，常留余地") }
-        if first >= max(3, texts.count / 8) { parts.append("常用“我/我们”表达立场") }
-        let style = parts.joined(separator: "；") + "。只归纳说话方式，不是心理测评。"
-        _ = profiles.setStyle(id: profile.id, style)
-        speakerProfiles = profiles.all()
-        return style
-    }
-
-    private func count(_ words: [String], in text: String) -> Int {
-        words.reduce(0) { total, word in
-            var n = 0, range = text.startIndex..<text.endIndex
-            while let r = text.range(of: word, range: range) {
-                n += 1
-                range = r.upperBound..<text.endIndex
-            }
-            return total + n
-        }
     }
 
     func deleteSpeakerProfile(id: UUID) {

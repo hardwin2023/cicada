@@ -1201,8 +1201,9 @@ struct MainWindowView: View {
                 .buttonStyle(.plain)
                 .help(showQuotes ? L("收起原话") : L("在纪要旁显示原话"))
             }
-            // Edit the notes, names and terms by hand (not while the meeting is being written).
-            if active == "notes", let notes = (s.id == store.liveID ? model.notes.notes : s.notes), !notes.isEmpty {
+            // Edit the notes, names and terms by hand: here only, not in the notes panel (it never
+            // takes focus), and not while the meeting is being written (the next pass would redo it).
+            if active == "notes", s.id != store.liveID, importer.status(of: s) == nil, let notes = s.notes, !notes.isEmpty {
                 NotesEditButton(model: model, session: s)
             }
             // Not while the meeting is still going, nor before an import has its text.
