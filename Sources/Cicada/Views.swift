@@ -1201,11 +1201,6 @@ struct MainWindowView: View {
                 .buttonStyle(.plain)
                 .help(showQuotes ? L("收起原话") : L("在纪要旁显示原话"))
             }
-            // Edit the notes, names and terms by hand: here only, not in the notes panel (it never
-            // takes focus), and not while the meeting is being written (the next pass would redo it).
-            if active == "notes", s.id != store.liveID, importer.status(of: s) == nil, let notes = s.notes, !notes.isEmpty {
-                NotesEditButton(model: model, session: s)
-            }
             // Not while the meeting is still going, nor before an import has its text.
             Button { sharing = s } label: {
                 Text("分享…").font(.system(size: 13)).foregroundStyle(Palette.secondary)
@@ -1634,7 +1629,7 @@ struct SessionNotesView: View {
                 header.id(PinnedHeader.top).pinnedHeader($pinned)
                 if let notes, !notes.isEmpty {
                     NotesContentView(notes: SpeakerLabels.named(notes, SpeakerLabels.names(session)), fresh: live ? engine.fresh : [], live: live, document: true,
-                                     endedAt: session.lines.last?.t, onJump: onJump)
+                                     endedAt: session.lines.last?.t, onJump: onJump, editing: model.editHooks(session))
                 } else if generating || (live && ling.hasKey && !session.lines.isEmpty && engine.state == .updating) {
                     NotesGeneratingView(heard: session.lines.count)
                 } else if live && ling.hasKey {

@@ -26,10 +26,13 @@ struct NotesContentView: View {
     var onJump: (Double) -> Void = { _ in }
     /// 改正听错的词's part of 人名和术语 (the words fixed, the ones waiting), from the notes window.
     var fixTerms: AnyView? = nil
+    /// A finished meeting on the main window's page: the summary, conclusions and to-dos change in place.
+    var editing: NotesEditHooks? = nil
 
     var body: some View {
         if document {
-            DocumentNotesView(notes: notes, fresh: fresh, live: live, updating: updating, endedAt: endedAt, onJump: onJump)
+            DocumentNotesView(notes: notes, fresh: fresh, live: live, updating: updating, endedAt: endedAt, onJump: onJump,
+                              editing: editing)
         } else {
             cards
         }
@@ -148,6 +151,13 @@ private struct DocumentNotesView: View {
     let updating: Bool
     let endedAt: Double?
     let onJump: (Double) -> Void
+    let editing: NotesEditHooks?
+    @State private var hovered: NoteEdit.Target?
+    @State private var draft = ""
+    @State private var draftOwner = ""
+    /// The owner as the row showed it when opened: unchanged means keep the stored one ("说话人2").
+    @State private var shownOwner = ""
+    @FocusState private var focused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 40) {
@@ -158,7 +168,12 @@ private struct DocumentNotesView: View {
                         .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.secondary)
                         .padding(.bottom, 2)
                     ForEach(Array(items.enumerated()), id: \.offset) { i, item in
-                        conclusion(item, index: i + 1, todo: i >= notes.conclusions.count)
+                        let todo = i >= notes.conclusions.count
+                        if editing?.current == .item(i) {
+                            itemEditor(index: i + 1, todo: todo)
+                        } else {
+                            editable(.item(i), inset: 8) { conclusion(item, index: i + 1, todo: todo) }
+                        }
                     }
                 }
                 .padding(.horizontal, 24).padding(.vertical, 22)
@@ -166,9 +181,14 @@ private struct DocumentNotesView: View {
                 .background(RoundedRectangle(cornerRadius: 14).fill(Palette.raised))
             }
 
-            if !notes.summary.isEmpty {
-                Text(notes.summary).font(.system(size: 15)).lineSpacing(9).foregroundStyle(Palette.body)
-                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            if editing?.current == .summary {
+                summaryEditor
+            } else if !notes.summary.isEmpty {
+                if editing == nil {
+                    summaryText.textSelection(.enabled)
+                } else {
+                    editable(.summary, inset: 10, hoverFill: Palette.raised) { summaryText }
+                }
             }
 
             if !notes.topics.isEmpty {
@@ -193,6 +213,132 @@ private struct DocumentNotesView: View {
                 }
             }
         }
+    }
+
+    private var summaryText: some View {
+        Text(notes.summary).font(.system(size: 15)).lineSpacing(9).foregroundStyle(Palette.body)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Editing in place
+
+    /// A row that opens for editing when clicked: on hover it lifts onto white (or grey on the white
+    /// page) and shows a pencil. Buttons inside it (the time link) keep their own clicks.
+    @ViewBuilder
+    private func editable<Content: View>(_ target: NoteEdit.Target, inset: CGFloat, hoverFill: Color = .white,
+                                         @ViewBuilder content: () -> Content) -> some View {
+        if let editing {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                content()
+                Image(systemName: "pencil").font(.system(size: 12)).foregroundStyle(Palette.tertiary)
+                    .opacity(hovered == target ? 1 : 0).accessibilityHidden(true)
+            }
+            .padding(.horizontal, inset).padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 9).fill(hovered == target ? hoverFill : .clear))
+            .padding(.horizontal, -inset)
+            .contentShape(Rectangle())
+            .onHover { hovered = $0 ? target : (hovered == target ? nil : hovered) }
+            .onTapGesture { editing.open(target) }
+            .help(L("点一下修改"))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { editing.open(target) }
+        } else {
+            content()
+        }
+    }
+
+    /// The app's own field: white, radius 9, a hairline, the accent when focused; never the system's
+    /// blue ring.
+    private func fieldFrame<V: View>(_ field: V, radius: CGFloat = 9) -> some View {
+        field
+            .textFieldStyle(.plain)
+            .focusEffectDisabled()
+            .background(RoundedRectangle(cornerRadius: radius).fill(Color.white))
+            .overlay(RoundedRectangle(cornerRadius: radius).stroke(focused ? Palette.accent : Palette.line,
+                                                                    lineWidth: focused ? 1.5 : 1))
+    }
+
+    private func itemEditor(index: Int, todo: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
+                Group {
+                    if todo { Image(systemName: "circle").font(.system(size: 11)) } else { Text("\(index)").font(.system(size: 12).monospacedDigit()) }
+                }
+                .fontWeight(.semibold).foregroundStyle(Palette.link).frame(width: 16, alignment: .leading)
+                fieldFrame(TextField(todo ? L("待办") : L("结论"), text: $draft, axis: .vertical)
+                    .font(.system(size: 15)).lineLimit(1...4)
+                    .focused($focused)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .onSubmit(commit))
+                if todo {
+                    TextField(L("负责人"), text: $draftOwner)
+                        .textFieldStyle(.plain).focusEffectDisabled()
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 8).frame(width: 110, height: 28)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(Color.white))
+                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Palette.line, lineWidth: 1))
+                        .onSubmit(commit)
+                }
+            }
+            HStack(spacing: 14) {
+                Text("⏎ 保存 · esc 取消").font(.system(size: 11)).foregroundStyle(Palette.tertiary)
+                Spacer()
+                Button(L("删除这条")) { draft = ""; commit() }
+                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Palette.accentInk)
+            }
+            .padding(.leading, 24)
+        }
+        .padding(.vertical, 2)
+        .onAppear { load() }
+        .onExitCommand { editing?.open(nil) }
+    }
+
+    private var summaryEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fieldFrame(TextEditor(text: $draft)
+                .font(.system(size: 15)).lineSpacing(9)
+                .scrollContentBackground(.hidden)
+                .focused($focused)
+                .frame(minHeight: 72)
+                .padding(.horizontal, 6).padding(.vertical, 8))
+            HStack(spacing: 14) {
+                Text("⌘⏎ 保存 · esc 取消").font(.system(size: 11)).foregroundStyle(Palette.tertiary)
+                Spacer()
+                Button(L("取消")) { editing?.open(nil) }
+                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Palette.secondary)
+                Button(L("保存")) { commit() }
+                    .buttonStyle(.plain).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.accentInk)
+                    .keyboardShortcut(.return, modifiers: .command)
+            }
+        }
+        .padding(.horizontal, -10)
+        .onAppear { load() }
+        .onExitCommand { editing?.open(nil) }
+    }
+
+    /// Fill the field from the piece being opened and put the caret in it.
+    private func load() {
+        guard let target = editing?.current else { return }
+        switch target {
+        case .summary:
+            draft = notes.summary
+            shownOwner = ""
+        case .item(let i):
+            let items = notes.conclusions + notes.todos
+            guard items.indices.contains(i) else { return }
+            draft = items[i].text
+            shownOwner = items[i].ownerShown ?? ""
+        }
+        draftOwner = shownOwner
+        hovered = nil
+        DispatchQueue.main.async { focused = true }
+    }
+
+    private func commit() {
+        guard let editing, let target = editing.current else { return }
+        let owner: String?? = draftOwner == shownOwner ? nil : .some(draftOwner)
+        editing.save(target, draft, owner)
     }
 
     /// A conclusion reads as a plain sentence, numbered, with its numbers and dates marked; clicking it

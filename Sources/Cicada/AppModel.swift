@@ -47,6 +47,8 @@ final class AppModel: ObservableObject {
     }
     /// The 试一句 sheet in settings.
     @Published var speakTestShown = false
+    /// The piece of a finished meeting's notes open for editing on the main window's page.
+    @Published var noteEdit: NoteEdit?
     /// The panel is asking, the first time, what turning 同声传译 on changes.
     @Published var speakAsking = false
     /// Meeting apps and the microphone each reads; refreshed every second once the virtual mic exists.
@@ -2393,17 +2395,27 @@ final class AppModel: ObservableObject {
             if let img = r.nsImage, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: p[1]))
             }
-        case "peopleShow", "notesEditShow":
-            // peopleShow (设置 › 通用 › 人员库) and notesEditShow:<会议 id> (编辑纪要) in a window of
-            // their own, for `screencapture -l` (winall): sheets a synthetic click can't reach.
-            let view: AnyView = parts.first == "peopleShow"
-                ? AnyView(SpeakerLibraryView(model: self))
-                : AnyView(NotesEditorView(model: self, sessionID: arg))
-            let w = NSWindow(contentViewController: NSHostingController(rootView: view))
-            w.title = parts.first ?? ""
+        case "peopleShow":
+            // 设置 › 通用 › 人员库 in a window of its own, for `screencapture -l` (winall): a sheet a
+            // synthetic click can't reach.
+            let w = NSWindow(contentViewController: NSHostingController(rootView: SpeakerLibraryView(model: self)))
+            w.title = "peopleShow"
             w.isReleasedWhenClosed = false
             w.center()
             w.makeKeyAndOrderFront(nil)
+        case "noteEdit", "noteSave":
+            // noteEdit:<会议 id>=<summary|N> opens that piece on the page like a click (N counts the
+            // conclusions then the to-dos from 1); noteEdit: closes it.
+            // noteSave:<会议 id>=<summary|N>|<text>[|<owner>] saves like ⏎; an empty text deletes the row.
+            let p = arg.split(separator: "=", maxSplits: 1).map(String.init)
+            guard p.count == 2 else { noteEdit = nil; break }
+            let rest = p[1].components(separatedBy: "|")
+            let target: NoteEdit.Target = rest[0] == "summary" ? .summary : .item((Int(rest[0]) ?? 1) - 1)
+            if parts.first == "noteEdit" {
+                noteEdit = NoteEdit(session: p[0], target: target)
+            } else {
+                saveNote(p[0], target, text: rest.count > 1 ? rest[1] : "", owner: rest.count > 2 ? .some(rest[2]) : nil)
+            }
         case "windowsRender":
             // Every visible window as drawn (<dir>/<n>-<class>.png), without Screen Recording permission.
             for (i, w) in NSApp.windows.enumerated() where w.isVisible {
