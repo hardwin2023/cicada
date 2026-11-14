@@ -13,6 +13,8 @@ from gi.repository import Gdk, GLib, Gtk, Pango
 
 from .. import VERSION
 from ..core import ling as lingmod
+from ..core import voice_reference
+from ..core import voices as voicemod
 from ..core.ling import AIKey
 from ..core.strings import L, LF
 from ..core.support import TARGETS, Paths, follow_system_target, my_language, system_languages
@@ -418,6 +420,13 @@ class SettingsWindow(Gtk.Window):
                         [(c, names.get(c, c)) for c in voicemod.ROOM_LANGUAGES], s.speakTo, set_to)
         voice = Gtk.ComboBoxText()
         voice.set_size_request(170, -1)
+        # 我自己的声音, under 声音: redrawn with the voices (a new recording, another service).
+        clone_slot = Gtk.EventBox()
+
+        def fill_clone():
+            ui.clear(clone_slot)
+            clone_slot.add(self._clone_row())
+            clone_slot.show_all()
 
         def fill_voices():
             code = app.speak.target
@@ -425,15 +434,19 @@ class SettingsWindow(Gtk.Window):
             voice.remove_all()
             for v, n, tags in voicemod.voices(code, app.ling.config()):
                 voice.append(v, "%s · %s" % (n, "、".join(L(t) for t in tags)))
+            if voice_reference.exists() and app.ling.usable and voicemod.clones(app.ling.config()):
+                voice.append(voicemod.CLONE, L("我自己的声音"))
             voice.set_active_id(app.speak.voice(code) or "")
             if getattr(voice, "_wired", False):
                 voice.handler_unblock_by_func(set_voice)
+            fill_clone()
 
         def set_voice(w):
             v = w.get_active_id()
             if v:
                 s.speakVoices[voicemod.key(app.speak.target)] = v
                 s.save()
+                fill_clone()
         fill_voices()
         voice.connect("changed", set_voice)
         voice._wired = True
@@ -450,8 +463,7 @@ class SettingsWindow(Gtk.Window):
                 p = Player(None)  # the speakers, not the room
                 start, n = time.monotonic(), 0
                 try:
-                    for pcm in app.ling.speech(text, voice=app.speak.voice(code) or "US_Emma",
-                                               language=voicemod.ming_language(code, app.ling.config())):
+                    for pcm in app.speak.speech(text, code, voice=app.speak.voice(code) or "US_Emma"):
                         n += len(pcm)
                         p.write(pcm)
                     p.drain()
@@ -461,6 +473,7 @@ class SettingsWindow(Gtk.Window):
                 finally:
                     p.close()
             threading.Thread(target=run, daemon=True).start()
+        self._preview_voice = preview
         voice_box = ui.hbox(8, voice, ui.button(L("试听"), preview, "outline"))
         self.voice_box = voice_box
         combos.extend([mine, theirs, voice])
@@ -470,6 +483,8 @@ class SettingsWindow(Gtk.Window):
             r = ui.prow(title, control, sub)
             dependents.append(r)
             rows.append(r)
+        dependents.append(clone_slot)
+        rows.append(clone_slot)
         short = self._shortcut_row("speak")
         dependents.append(short)
         rows.append(short)
@@ -499,6 +514,46 @@ class SettingsWindow(Gtk.Window):
         self.speak_status = ui.text("", 11, "warn", width_chars=60)
         self.speak_status.set_no_show_all(True)
         return ui.vbox(6, self._group(L("同声传译"), ui.boxed(rows)), ui.pad(self.speak_status, 0, 4, 0, 4))
+
+    def _clone_row(self) -> Gtk.Widget:
+        """我自己的声音 (VoicePicker.swift › cloneRow): 录制 until there is a recording, then how long
+        it is and how it will sound, with 重录 / 删除. Only Ling clones: elsewhere it says so."""
+        app, s = self.app, self.app.settings
+        code = app.speak.target
+        title = L("我自己的声音")
+        if not voicemod.clones(app.ling.config()):
+            return ui.prow(title, ui.soft_button(L("去换成 Ling"), lambda: app.show_settings(ai=True)), L("只有 Ling 能用你自己的声音"))
+        if not voice_reference.exists():
+            b = ui.soft_button(L("录制"), self.record_voice, dark=True)
+            b.set_sensitive(app.ling.usable)
+            return ui.prow(title, b, L("录 15 秒原声，对方听到你的音色，晚约 3 秒"))
+        if voice_reference.saved_is_slow():
+            note = L("读得偏慢")
+        else:
+            note = L("最像你") if voicemod.key(s.speak_from_code) == voicemod.key(code) else L("会带你的口音")
+        controls = ui.hbox(8, ui.soft_button(L("重录"), self.record_voice), ui.soft_button(L("删除"), self.remove_voice))
+        row = ui.prow(title, controls, LF("已录 %lld 秒 · %@", int(round(voice_reference.duration())), note))
+        if app.speak.voice(code) == voicemod.CLONE:
+            ui.classes(row, "voicewash")
+        return row
+
+    def record_voice(self) -> None:
+        from .voice_clone import VoiceCloneDialog
+        self.voice_dialog = VoiceCloneDialog(self.app, self, lambda saved: self._voice_done())
+
+    def _voice_done(self) -> None:
+        self.voice_dialog = None
+        if hasattr(self, "_fill_voices"):
+            self._fill_voices()
+
+    def remove_voice(self) -> None:
+        """The recording goes, and every language that used it is back on its default voice."""
+        s = self.app.settings
+        voice_reference.remove()
+        s.speakVoices = {k: v for k, v in (s.speakVoices or {}).items() if v != voicemod.CLONE}
+        s.save()
+        if hasattr(self, "_fill_voices"):
+            self._fill_voices()
 
     def _room_group(self):
         """会议室: the microphone 打开麦克风 hears the room with (自动 picks as roommic.pick does). Whether

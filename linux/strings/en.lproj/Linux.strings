@@ -211,3 +211,6 @@
 /* 在 Dock 中显示: the top bar, not a menu bar */
 "关掉后只在顶栏，打开窗口时才出现" = "Off: top bar only, in the Dock just while a window is open";
 "改一下这个文件夹的权限，或换个文件夹" = "Change this folder's permissions, or pick another folder";
+
+/* 我自己的声音 (voice_clone.py): the recording stays on this computer, not "this Mac". */
+"听起来不像或有杂音？换个安静的地方重录一次。录音仅保存在本机，可随时删除。" = "Doesn't sound like you, or noisy? Record again somewhere quiet. The recording stays on this computer and can be deleted anytime.";

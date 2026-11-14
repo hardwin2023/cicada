@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from . import strings
+from . import voice_reference
 from . import voices as voicemod
 from .audio import RATE, Wav
 from .ling import LingError, TTS_RATE
@@ -115,10 +116,33 @@ class SpeakEngine:
         return "en" if voicemod.key(self.source) != "en" else "zh-CN"
 
     def voice(self, code: str) -> str | None:
-        chosen = (self.settings.speakVoices or {}).get(voicemod.key(code))
+        """The voice id for a language: a Ming voice (or the service's), or voicemod.CLONE."""
+        choice = (self.settings.speakVoices or {}).get(voicemod.key(code))
+        return voicemod.chosen(choice, code, self.ling.config(), voice_reference.exists())
+
+    def speech(self, text: str, code: str, voice: str | None = None):
+        """The voice for `text` in `code`'s language, as 24 kHz PCM chunks (a generator). The user's
+        own voice that fails before its first sound (Ming refused the clip, or took too long) says
+        the sentence in the language's default voice instead, as the Mac falls back to its own."""
         config = self.ling.config()
-        names = [v for v, _n, _t in voicemod.voices(code, config)]
-        return chosen if chosen in names else voicemod.default_voice(code, config)
+        voice = voice or self.voice(code)
+        language = voicemod.ming_language(code, config)
+        if voice != voicemod.CLONE:
+            yield from self.ling.speech(text, voice=voice, language=language)
+            return
+        ref = voice_reference.reference()
+        started = False
+        if ref is not None:
+            try:
+                for pcm in self.ling.speech(text, voice=None, language=language, reference=ref):
+                    started = True
+                    yield pcm
+                return
+            except LingError as e:
+                if started:
+                    raise
+                Log.d("speak: own voice failed %s, the default voice instead" % e)
+        yield from self.ling.speech(text, voice=voicemod.default_voice(code, config), language=language)
 
     # Running
 
@@ -238,7 +262,7 @@ class SpeakEngine:
 
         def run():
             try:
-                for pcm in self.ling.speech(text, voice=self.voice(target), language=voicemod.ming_language(target, self.ling.config())):
+                for pcm in self.speech(text, target):
                     chunks.put(pcm)
                 chunks.put(_END)
             except LingError as e:

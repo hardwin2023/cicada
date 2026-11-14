@@ -832,11 +832,12 @@ class LingClient:
                 Log.d("ling: %s 429, retry in %.1f s" % (name, wait))
                 attempt += 1
 
-    def speech(self, text: str, voice: str | None = "UK_Charlotte", language: str | None = None, timeout: float = 20.0):
+    def speech(self, text: str, voice: str | None = "UK_Charlotte", language: str | None = None, timeout: float = 20.0,
+               reference: tuple | None = None):
         """_speech, remembering how it went (现在能用的 › 同传声音 says so). Cut short on purpose (stop,
         a new press) is neither."""
         try:
-            yield from self._speech(text, voice, language, timeout)
+            yield from self._speech(text, voice, language, timeout, reference)
         except GeneratorExit:
             raise
         except Exception:
@@ -844,9 +845,10 @@ class LingClient:
             raise
         self.last_voice = (True, time.time())
 
-    def _speech(self, text: str, voice: str | None, language: str | None, timeout: float):
+    def _speech(self, text: str, voice: str | None, language: str | None, timeout: float, reference: tuple | None = None):
         """The service's voice for `text`, as raw 24 kHz mono 16-bit PCM chunks while they arrive (a
-        generator). On Ling, `voice` is Ming's and `language` its language_id, needed for Japanese,
+        generator). On Ling, `voice` is Ming's, or a voice cloned from `reference` (a WAV data URI and
+        what it says, voice_reference.reference), and `language` its language_id, needed for Japanese,
         Korean, German, French and Spanish (Ling.swift › speech); elsewhere the configured speech
         model and `voice`. Replies come three ways and all are read: server-sent base64 chunks (Ling,
         ZenMux), raw PCM (OpenRouter), or one JSON `{"audio": <WAV>}`."""
@@ -858,7 +860,13 @@ class LingClient:
             raise LingError(LingError.NO_KEY)
         body = {"model": c.voice_model, "input": text, "response_format": "pcm"}
         if c.is_ling:
-            body.update({"sample_rate": TTS_RATE, "stream": True, "stream_format": "sse", "voice": voice or "UK_Charlotte"})
+            body.update({"sample_rate": TTS_RATE, "stream": True, "stream_format": "sse"})
+            if reference:
+                # The clip goes with every sentence: Ming takes longer to start (Ling.swift waits 30 s).
+                body["references"] = [{"audio": reference[0], "text": reference[1]}]
+                timeout = max(timeout, 30.0)
+            else:
+                body["voice"] = voice or "UK_Charlotte"
             if language:
                 body["language_id"] = language
         else:

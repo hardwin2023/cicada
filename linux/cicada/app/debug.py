@@ -27,7 +27,11 @@ per connection, one JSON line back. Never in release builds.
            | copy all|link|password | revoke | close | state
   export-folder <path>|off|on (存到文件夹: choose a folder as 存到这里 does, and its check) |
   export-state (folder, problem, index, the records not written yet) | export-all (也存一份) | export-retry |
-  export-choose (open 存到哪里, as 更改… does; answer it with the dialog itself)"""
+  export-choose (open 存到哪里, as 更改… does; answer it with the dialog itself)
+  voice <lang> | voice <lang>=<id> (the voice a language uses: "voice en=clone", "voice zh=灵小锋")
+  voice-clone <wav>|off|state (我自己的声音 from a 16 kHz WAV: Ming hears it, the Mac's checks, then kept; state
+           says the last result and the files' modes) | voice-preview [<lang>] (试听 in that language: what played)
+  voice-dialog open|feed <wav>|finish|play original|clone|save|close|state (the record sheet, a WAV as the mic)"""
 from __future__ import annotations
 
 import os
@@ -360,6 +364,8 @@ def command(app, line: str) -> dict:
             app.toggle_speaking()
         # echoCancelled: this press reads the talk key's echo canceller (else the plain mic, echo drop on)
         return {"ok": True, "speaking": app.speak.active, "echoCancelled": app.speak.echo_cancelled}
+    if cmd.startswith("voice"):
+        return _voice(app, cmd, arg)
     if cmd == "codecs":
         from . import media
         return {"ok": True, **media.codecs(), "recordAudio": app.settings.recordAudio, "recording": listen.recording}
@@ -740,6 +746,110 @@ def _fixes(app, cmd: str, arg: str) -> dict:
     if cmd == "vocab-state":
         return {"ok": True, "path": app.vocabulary.path,
                 "terms": [t.to_json() for t in app.vocabulary.snapshot()]}
+    return {"ok": False, "error": "unknown command " + cmd}
+
+
+def _voice(app, cmd: str, arg: str) -> dict:
+    """我自己的声音 without a microphone: the network runs on a thread and `state` reads the result."""
+    from ..core import voice_reference as vref
+    from ..core import voices as voicemod
+    from ..core.audio import PcmAudioSource, RATE, Wav
+    sw = app.settings_window
+
+    def refresh():
+        if sw is not None and hasattr(sw, "_fill_voices"):
+            sw._fill_voices()
+    if cmd == "voice":
+        lang, _, vid = arg.partition("=")
+        if vid:
+            app.settings.speakVoices[voicemod.key(lang)] = vid
+            app.settings.save()
+            refresh()
+        Log.d("voice %s -> %s clone=%s" % (lang, app.speak.voice(lang), vref.exists()))
+        return {"ok": True, "lang": lang, "chosen": (app.settings.speakVoices or {}).get(voicemod.key(lang)),
+                "uses": app.speak.voice(lang), "options": [v for v, _n, _t in voicemod.voices(lang, app.ling.config())],
+                "clone": vref.exists(), "clones": voicemod.clones(app.ling.config())}
+    if cmd == "voice-clone":
+        if arg == "off":
+            if sw is not None:
+                sw.remove_voice()
+            else:
+                vref.remove()
+            return {"ok": True, "exists": vref.exists()}
+        if arg in ("", "state"):
+            out = {"ok": True, "exists": vref.exists(), "last": getattr(app, "voice_debug", None)}
+            if vref.exists():
+                out.update({"seconds": round(vref.duration(), 2), "textChars": len(vref.text() or ""), "slow": vref.saved_is_slow(),
+                            "modes": [oct(os.stat(p).st_mode & 0o777) for p in (vref.folder(), vref.audio_path(), vref.text_path())]})
+            return out
+        app.voice_debug = {"running": True}
+
+        def run():
+            from .voice_clone import transcribe
+            samples = vref.trim(Wav.read_file(arg))
+            try:
+                text = transcribe(app, samples)
+            except Exception as e:  # noqa: BLE001
+                app.voice_debug = {"running": False, "error": str(e)}
+                return
+            why = vref.check(samples, text)
+            p = vref.pace(text, samples)
+            if why is None:
+                vref.save(samples, text)
+            app.voice_debug = {"running": False, "seconds": round(len(samples) / RATE, 2), "textChars": len(text),
+                               "pace": round(p, 2) if p else None, "why": why, "saved": why is None}
+            GLib.idle_add(lambda: refresh() or False)
+        threading.Thread(target=run, daemon=True).start()
+        return {"ok": True, "started": True}
+    if cmd == "voice-preview":
+        code = arg or app.speak.target
+        app.voice_debug = {"running": True}
+
+        def play():
+            from .room import Player
+            from .settings_window import PREVIEW
+            text = PREVIEW.get(code[:2], PREVIEW["en"])
+            uses = app.speak.voice(code)
+            start, n, first = time.monotonic(), 0, None
+            out = Player(None)
+            try:
+                for pcm in app.speak.speech(text, code):
+                    if first is None:
+                        first = time.monotonic() - start
+                    n += len(pcm)
+                    out.write(pcm)
+                out.drain()
+                app.voice_debug = {"running": False, "voice": uses, "seconds": round(n / 2 / 24000, 2),
+                                   "firstSound": round(first or 0, 2), "took": round(time.monotonic() - start, 2)}
+            except Exception as e:  # noqa: BLE001
+                app.voice_debug = {"running": False, "voice": uses, "error": str(e)}
+            finally:
+                out.close()
+        threading.Thread(target=play, daemon=True).start()
+        return {"ok": True, "started": True}
+    if cmd == "voice-dialog":
+        what, _, rest = arg.partition(" ")
+        d = getattr(sw, "voice_dialog", None)
+        if what == "open":
+            app.show_settings()
+            app.settings_window.record_voice()
+            return {"ok": True}
+        if d is None or d.window is None:
+            return {"ok": False, "error": "no dialog"}
+        r = d.recorder
+        if what == "feed":  # the WAV as the microphone, in real time; the recording stops when it ends
+            d.consent = True
+            r.start(PcmAudioSource(rest))
+        elif what == "finish":
+            r.finish()
+        elif what == "play":
+            d.play(rest)
+        elif what == "save":
+            d.save()
+        elif what == "close":
+            d.close(False)
+        return {"ok": True, "phase": r.phase, "why": r.why, "seconds": round(r.seconds, 1), "textChars": len(r.transcript),
+                "playing": d.playing, "consent": d.consent}
     return {"ok": False, "error": "unknown command " + cmd}
 
 
