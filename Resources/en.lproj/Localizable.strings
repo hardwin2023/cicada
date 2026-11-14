@@ -1476,7 +1476,7 @@
 "名字" = "Name";
 "%lld 段样本 · 最近 %@" = "%lld samples · last seen %@";
 "改名" = "Rename";
-"共 %lld 个人" = "%lld people";
+"共 %lld 个人" = "%lld saved";
 "全部删除" = "Delete all";
 "删除“%@”的声纹？" = "Delete the voiceprint for “%@”?";
 "之后的会议不会再自动认出这个人；已经生成的记录保持原样。" = "Future meetings won't recognize this person automatically. Existing records stay unchanged.";
@@ -1484,8 +1484,8 @@
 "之后所有会议都不会再自动认出人；已有记录保持原样。" = "All future meetings will stop recognizing people automatically. Existing records stay unchanged.";
 "还没在新会议里出现" = "Not seen in a new meeting yet";
 "记住说话人" = "Remember speakers";
-"按本机声纹认出以前见过的人；不会上传声音" = "Recognize people you've met by voice, on this Mac; audio is never uploaded";
-"%lld 个人" = "%lld people";
+"按本机声纹认出以前见过的人；不会上传声音" = "Recognizes people by voice, on this Mac only";
+"%lld 个人" = "%lld saved";
 "管理" = "Manage";
 "声纹库：可能是 %@（%lld%%）" = "Voice library: possibly %@ (%lld%%)";
 "声音像，但还不够确定。确认后，下次会议会直接认出。" = "It sounds similar, but isn't certain yet. Confirming makes the next meeting recognize them.";
@@ -1503,7 +1503,7 @@
 "没有可用的录音" = "No usable recording";
 "打开“保存会议录音”，或用导入的录音文件建立声纹。" = "Turn on Save meeting audio, or use an imported recording to create a voiceprint.";
 "记住“%@”的声音？" = "Remember the voice of “%@”?";
-"声纹只保存在这台 Mac，用于以后会议自动认出这个人；可以随时在声纹库里删除。" = "The voiceprint stays only on this Mac and is used to recognize this person in future meetings. You can delete it from the voice library anytime.";
+"请先确认对方知道。声纹只保存在这台 Mac，用于以后会议认出这个人，可随时在声纹库里删除。" = "Make sure they know first. The voiceprint stays only on this Mac, is used to recognize this person in later meetings, and can be deleted from the voice library anytime.";
 "记住" = "Remember";
 "不用" = "Not now";
 "这个声音还不够清楚" = "This voice isn't clear enough";

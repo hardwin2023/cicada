@@ -260,9 +260,12 @@ enum SpeakerLabels {
     }
 
     /// The voices a meeting already knows by name; `Session.voiceProfiles` is the snapshot.
+    /// A name the user typed is not enough by itself: the five-line rule is shared with the ports
+    /// and the share document. The exception is a one-to-one call's only voice, which the user named.
     static func knownVoices(_ s: Session) -> Set<Int> {
-        Set((s.voiceProfiles ?? [:]).keys.compactMap(Int.init))
-            .union((s.voiceNames ?? [:]).keys.compactMap(Int.init))
+        var known = Set((s.voiceProfiles ?? [:]).keys.compactMap(Int.init))
+        if let only = singleVoice(s.lines), let name = s.voiceNames?[String(only)], !name.isEmpty { known.insert(only) }
+        return known
     }
 
     static func voiceNumbers(_ s: Session) -> [Int: Int] {
@@ -442,9 +445,15 @@ final class SpeakerTagger {
             }
             var voice: Int?
             var matched = profiles?.match(embedding, policy: policy)
+            // A short line's voiceprint is unsteady (the clusterer won't start a voice from one
+            // either): it may suggest a name, never put one on a voice by itself.
+            if let match = matched, match.kind == .auto, seconds < VoiceClusterer.newSeconds {
+                matched = SpeakerProfileMatch(profile: match.profile, similarity: match.similarity, kind: .suggested)
+            }
             if let match = matched, match.kind == .auto {
                 if let existing = voiceProfiles.first(where: { $0.value == match.profile.id })?.key {
                     voice = existing
+                    clusterer.adopt(embedding, into: existing)
                     matched = nil                 // already named in this meeting
                 } else if let nearby = clusterer.closest(to: match.profile.embedding, minimum: VoiceClusterer.join),
                           let bound = voiceProfiles[nearby] {
@@ -456,7 +465,10 @@ final class SpeakerTagger {
                 } else {
                     let nearby = clusterer.closest(to: match.profile.embedding, minimum: VoiceClusterer.join)
                     voice = nearby ?? clusterer.seed(match.profile.embedding)
-                    if let voice { voiceProfiles[voice] = match.profile.id }
+                    if let voice {
+                        voiceProfiles[voice] = match.profile.id
+                        clusterer.adopt(embedding, into: voice)   // this line counts towards it too
+                    }
                 }
             } else {
                 voice = clusterer.label(embedding, seconds: seconds)

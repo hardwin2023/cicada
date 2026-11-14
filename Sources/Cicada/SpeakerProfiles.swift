@@ -11,7 +11,7 @@ struct SpeakerProfile: Codable, Identifiable, Equatable {
     var createdAt: Date
     var updatedAt: Date
     var lastSeenAt: Date?
-    /// When the user agreed to keep this voice. Absent for a profile made before this field existed.
+    /// When the user agreed to keep this voice (the 记住 alert).
     var consentAt: Date?
     /// Notes the user keeps about this person: company, role, what to remember.
     var notes: String? = nil
@@ -123,7 +123,6 @@ final class SpeakerProfileStore: @unchecked Sendable {
         cached = Self.load(from: url)
         try? Self.protectDirectory(url.deletingLastPathComponent())
         try? Self.protectFile(url)
-        for p in cached where p.consentAt == nil { try? markConsent(p.id, at: p.createdAt) }
     }
 
     func all() -> [SpeakerProfile] {
@@ -245,12 +244,6 @@ final class SpeakerProfileStore: @unchecked Sendable {
         }
     }
 
-    private func markConsent(_ id: UUID, at date: Date) throws {
-        mutate { profiles in
-            guard let i = profiles.firstIndex(where: { $0.id == id }), profiles[i].consentAt == nil else { return }
-            profiles[i].consentAt = date
-        }
-    }
 
     private func mutate(_ change: (inout [SpeakerProfile]) -> Void) {
         lock.lock()

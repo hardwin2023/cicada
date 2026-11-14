@@ -70,6 +70,20 @@ import Testing
         #expect(SpeakerLabels.names(s) == [1: "张总"])
     }
 
+    /// A typed name alone keeps the five-line rule (the share document and the ports rely on it),
+    /// except for a one-to-one call's only voice.
+    @Test func aTypedNameDoesNotSkipTheFiveLineRule() {
+        func line(_ id: String, _ voice: Int) -> TranscriptLine {
+            TranscriptLine(id: id, t: 1, speaker: "them", src: "我们周四上线", dst: nil, srcLang: "zh-CN", dstLang: "en", voice: voice)
+        }
+        var s = Session(id: "s", title: "t", startedAt: Date(), endedAt: nil, lines: [line("a", 1), line("b", 2)],
+                        hasAudio: false, notes: nil, voiceNames: ["2": "Kenji"])
+        #expect(SpeakerLabels.numbers(s).isEmpty)
+        s.lines = [line("a", 2)]
+        #expect(SpeakerLabels.numbers(s) == ["a": 1])
+        #expect(SpeakerLabels.names(s) == [1: "Kenji"])
+    }
+
     @Test func oldSessionJSONStillDecodes() throws {
         let json = """
         {"id":"old","title":"会议","startedAt":"2026-01-01T00:00:00Z","lines":[],"hasAudio":false}
