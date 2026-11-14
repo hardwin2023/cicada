@@ -182,6 +182,8 @@ final class AppModel: ObservableObject {
     private var speakerSetting: AnyCancellable?
     private var speakerMemorySetting: AnyCancellable?
     private var handsFreeSetting: AnyCancellable?
+    /// 开始听时打开麦克风 already opened it for this meeting's call.
+    private var micAutoOpened = false
     var openOnboarding: (() -> Void)?
 
     var openMainWindow: (() -> Void)?
@@ -729,10 +731,12 @@ final class AppModel: ObservableObject {
     /// listening began. Starting by itself (launch, a meeting app's call) waits for the first words.
     func start(byUser: Bool = false) {
         guard !listen.isRunning else { return }
-        // Starting by hand means the meeting is here now: open the room microphone too, unless
-        // this Mac is only ever used for online meetings (设置 › 通用). Launch still stays silent.
+        // Starting by hand means the meeting is here now: open the room microphone too, when the
+        // user turned on 开始听时打开麦克风 (设置 › 通用). Launch still stays silent.
+        micAutoOpened = false
         if byUser, settings.autoMicOnStart, settings.listenSource == "system" {
             settings.listenSource = Recognition.legacy ? "room" : "both"
+            micAutoOpened = true
             debugLog("mic auto-on: user started listening")
         }
         let session = store.begin()
@@ -1347,7 +1351,9 @@ final class AppModel: ObservableObject {
             // A meeting app call started while we were already listening to the Mac only: add the
             // room microphone, or the user's own voice is missing from the record (Tencent Meeting,
             // Zoom, …). 启动时 launch() still starts without the microphone; this is the call signal.
-            if settings.autoMicOnStart, settings.listenSource == "system", !calls.isEmpty {
+            // Once a meeting: closing the microphone by hand during the call must stay closed.
+            if settings.autoMicOnStart, !micAutoOpened, settings.listenSource == "system", !calls.isEmpty {
+                micAutoOpened = true
                 debugLog("mic auto-on: a meeting app started a call")
                 setMic(true)
             }
@@ -1530,7 +1536,7 @@ final class AppModel: ObservableObject {
         }
         let alert = NSAlert()
         alert.messageText = L("记住“\(chosen)”的声音？")
-        alert.informativeText = L("声纹只保存在这台 Mac，用于以后会议自动认出这个人；可以随时在声纹库里删除。")
+        alert.informativeText = L("请先确认对方知道。声纹只保存在这台 Mac，用于以后会议认出这个人，可随时在声纹库里删除。")
         alert.addButton(withTitle: L("记住"))
         alert.addButton(withTitle: L("不用"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
